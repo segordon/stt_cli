@@ -7,6 +7,7 @@ This project provides local, GPU-accelerated speech-to-text for Linux X11 workfl
 For deep implementation history and agent handoff context, read `docs/AGENTS.md`.
 For command-only reference, use `docs/CHEATSHEET.md`.
 For repeatable verification and smoke checks, use `docs/TESTING.md`.
+For rename details and upgrade steps, use `docs/MIGRATION.md`.
 
 ## What You Get
 
@@ -28,7 +29,7 @@ For repeatable verification and smoke checks, use `docs/TESTING.md`.
 
 - Primary commands are now `keystrel-daemon`, `keystrel-client`, and `keystrel-ptt`.
 - Preferred environment variable prefix is `KEYSTREL_`.
-- Legacy `STT_` environment variables are still accepted for backward compatibility.
+- Legacy `STT_` environment variables are still accepted for backward compatibility and now emit a one-time deprecation warning.
 
 ## High-Level Architecture
 

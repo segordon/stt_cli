@@ -36,10 +36,22 @@ def _env_candidates(name):
     return (name,)
 
 
+_LEGACY_ENV_WARNED = set()
+
+
 def get_env(name, default=None):
-    for candidate in _env_candidates(name):
+    candidates = _env_candidates(name)
+    primary_name = candidates[0]
+
+    for candidate in candidates:
         raw = os.environ.get(candidate)
         if raw is not None and str(raw).strip():
+            if candidate != primary_name and candidate not in _LEGACY_ENV_WARNED:
+                print(
+                    f"[keystrel-daemon] {candidate} is deprecated; use {primary_name} instead",
+                    file=sys.stderr,
+                )
+                _LEGACY_ENV_WARNED.add(candidate)
             return raw
     return default
 

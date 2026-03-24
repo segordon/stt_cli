@@ -11,7 +11,7 @@ Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows
 - Project name: `Keystrel`
 - Primary commands: `keystrel-daemon`, `keystrel-client`, `keystrel-ptt`
 - Preferred env var prefix: `KEYSTREL_`
-- Legacy `STT_` env vars remain supported for migration safety
+- Legacy `STT_` env vars remain supported for migration safety (with one-time deprecation warnings)
 
 ## Cost Policy
 
