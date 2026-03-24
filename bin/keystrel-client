@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+keystrel_env_file="${KEYSTREL_ENV_FILE:-${STT_ENV_FILE:-$repo_root/venv/env.sh}}"
+keystrel_client_py="${KEYSTREL_CLIENT_PY:-${STT_CLIENT_PY:-$repo_root/lib/keystrel_client.py}}"
+
+if [[ ! -f "$keystrel_env_file" ]]; then
+  printf '[keystrel-client] missing env file: %s\n' "$keystrel_env_file" >&2
+  exit 2
+fi
+
+if [[ ! -f "$keystrel_client_py" ]]; then
+  printf '[keystrel-client] missing client script: %s\n' "$keystrel_client_py" >&2
+  exit 3
+fi
+
+source "$keystrel_env_file"
+exec python "$keystrel_client_py" "$@"

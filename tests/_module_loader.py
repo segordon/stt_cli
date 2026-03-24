@@ -35,7 +35,7 @@ def load_client_module():
         if name not in sys.modules:
             stub_modules[name] = types.ModuleType(name)
 
-    return _load_module("stt_client_test", LIB_DIR / "stt_client.py", stub_modules)
+    return _load_module("keystrel_client_test", LIB_DIR / "keystrel_client.py", stub_modules)
 
 
 def load_daemon_module():
@@ -50,4 +50,4 @@ def load_daemon_module():
         setattr(faster_whisper, "WhisperModel", WhisperModel)
         stub_modules["faster_whisper"] = faster_whisper
 
-    return _load_module("stt_daemon_test", LIB_DIR / "stt_daemon.py", stub_modules)
+    return _load_module("keystrel_daemon_test", LIB_DIR / "keystrel_daemon.py", stub_modules)

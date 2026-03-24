@@ -10,7 +10,7 @@ from pathlib import Path
 from tests._module_loader import load_client_module
 
 
-stt_client = load_client_module()
+keystrel_client = load_client_module()
 
 
 class _TCPResponderHandler(socketserver.BaseRequestHandler):
@@ -102,7 +102,7 @@ class ClientTransportTests(unittest.TestCase):
     def test_send_tcp_request_success(self):
         with RunningTCPResponder(lambda conn, req: conn.sendall(b'{"ok":true,"text":"hello"}\n')) as server:
             host, port = server.host_port
-            response = stt_client.send_tcp_request(host, port, {"hello": "world"}, timeout_s=1.0)
+            response = keystrel_client.send_tcp_request(host, port, {"hello": "world"}, timeout_s=1.0)
             self.assertTrue(response["ok"])
             self.assertEqual(response["text"], "hello")
 
@@ -113,20 +113,20 @@ class ClientTransportTests(unittest.TestCase):
         with RunningTCPResponder(lambda conn, req: conn.sendall(b"not-json\n")) as server:
             host, port = server.host_port
             with self.assertRaisesRegex(RuntimeError, "invalid JSON response from remote server"):
-                stt_client.send_tcp_request(host, port, {"x": 1}, timeout_s=1.0)
+                keystrel_client.send_tcp_request(host, port, {"x": 1}, timeout_s=1.0)
 
     def test_send_tcp_request_empty_response(self):
         with RunningTCPResponder(lambda conn, req: None) as server:
             host, port = server.host_port
             with self.assertRaisesRegex(RuntimeError, "empty response from remote server"):
-                stt_client.send_tcp_request(host, port, {"x": 1}, timeout_s=1.0)
+                keystrel_client.send_tcp_request(host, port, {"x": 1}, timeout_s=1.0)
 
     def test_send_tcp_request_response_size_limit(self):
         huge_response = b'{"ok":true,"blob":"' + (b"a" * 500) + b'"}\n'
         with RunningTCPResponder(lambda conn, req: conn.sendall(huge_response)) as server:
             host, port = server.host_port
             with self.assertRaisesRegex(RuntimeError, "remote response exceeded size limit"):
-                stt_client.send_tcp_request(
+                keystrel_client.send_tcp_request(
                     host,
                     port,
                     {"x": 1},
@@ -141,7 +141,7 @@ class ClientTransportTests(unittest.TestCase):
         with RunningTCPResponder(_slow) as server:
             host, port = server.host_port
             with self.assertRaisesRegex(TimeoutError, "remote server request timed out"):
-                stt_client.send_tcp_request(host, port, {"x": 1}, timeout_s=0.05)
+                keystrel_client.send_tcp_request(host, port, {"x": 1}, timeout_s=0.05)
 
     def test_send_tcp_request_connect_failure(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -149,11 +149,11 @@ class ClientTransportTests(unittest.TestCase):
             host, port = probe.getsockname()
 
         with self.assertRaisesRegex(RuntimeError, "remote server connection failed"):
-            stt_client.send_tcp_request(host, port, {"x": 1}, timeout_s=0.2)
+            keystrel_client.send_tcp_request(host, port, {"x": 1}, timeout_s=0.2)
 
     def test_send_unix_request_success(self):
         with RunningUnixResponder(lambda conn, req: conn.sendall(b'{"ok":true,"text":"unix"}\n')) as server:
-            response = stt_client.send_unix_request(server.socket_path, {"hello": "unix"}, timeout_s=1.0)
+            response = keystrel_client.send_unix_request(server.socket_path, {"hello": "unix"}, timeout_s=1.0)
             self.assertTrue(response["ok"])
             self.assertEqual(response["text"], "unix")
 
@@ -163,7 +163,7 @@ class ClientTransportTests(unittest.TestCase):
     def test_send_unix_request_empty_response(self):
         with RunningUnixResponder(lambda conn, req: None) as server:
             with self.assertRaisesRegex(RuntimeError, "empty response from daemon"):
-                stt_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=1.0)
+                keystrel_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=1.0)
 
     def test_send_unix_request_timeout(self):
         def _slow(conn, req):
@@ -171,7 +171,7 @@ class ClientTransportTests(unittest.TestCase):
 
         with RunningUnixResponder(_slow) as server:
             with self.assertRaisesRegex(TimeoutError, "daemon request timed out"):
-                stt_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=0.05)
+                keystrel_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=0.05)
 
 
 if __name__ == "__main__":

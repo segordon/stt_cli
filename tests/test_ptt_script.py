@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PTT_SCRIPT = REPO_ROOT / "bin" / "stt-ptt"
+PTT_SCRIPT = REPO_ROOT / "bin" / "keystrel-ptt"
 
 
 def _write_executable(path, content):
@@ -34,16 +34,16 @@ printf '%s\n' "$*" >>"${XDOTOOL_LOG:?}"
         )
 
         _write_executable(
-            self.fake_bin / "stt-client",
+            self.fake_bin / "keystrel-client",
             """#!/usr/bin/env bash
 set -euo pipefail
-printf 'call\n' >>"${STT_CLIENT_CALL_LOG:?}"
-if [[ -n "${STT_CLIENT_SLEEP_MS:-}" ]]; then
-  s=$((STT_CLIENT_SLEEP_MS / 1000))
-  ms=$((STT_CLIENT_SLEEP_MS % 1000))
+printf 'call\n' >>"${KEYSTREL_CLIENT_CALL_LOG:?}"
+if [[ -n "${KEYSTREL_CLIENT_SLEEP_MS:-}" ]]; then
+  s=$((KEYSTREL_CLIENT_SLEEP_MS / 1000))
+  ms=$((KEYSTREL_CLIENT_SLEEP_MS % 1000))
   sleep "${s}.$(printf '%03d' "$ms")"
 fi
-printf '%s' "${STT_CLIENT_TEXT:-hello world}"
+printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
 """,
         )
 
@@ -52,12 +52,12 @@ printf '%s' "${STT_CLIENT_TEXT:-hello world}"
             {
                 "XDG_SESSION_TYPE": "x11",
                 "XDG_RUNTIME_DIR": str(self.temp_dir / "runtime"),
-                "STT_CLIENT_BIN": str(self.fake_bin / "stt-client"),
-                "STT_PTT_CHIME_ENABLED": "0",
-                "STT_PTT_CHIME_TARGET": "dummy-target",
-                "STT_PTT_SEND_ENTER": "0",
+                "KEYSTREL_CLIENT_BIN": str(self.fake_bin / "keystrel-client"),
+                "KEYSTREL_PTT_CHIME_ENABLED": "0",
+                "KEYSTREL_PTT_CHIME_TARGET": "dummy-target",
+                "KEYSTREL_PTT_SEND_ENTER": "0",
                 "XDOTOOL_LOG": str(self.xdotool_log),
-                "STT_CLIENT_CALL_LOG": str(self.client_log),
+                "KEYSTREL_CLIENT_CALL_LOG": str(self.client_log),
                 "PATH": f"{self.fake_bin}:{self.base_env.get('PATH', '')}",
             }
         )
@@ -79,8 +79,8 @@ printf '%s' "${STT_CLIENT_TEXT:-hello world}"
         )
 
     def test_debounce_suppresses_second_invocation(self):
-        first = self._run_ptt({"STT_PTT_DEBOUNCE_MS": "60000"})
-        second = self._run_ptt({"STT_PTT_DEBOUNCE_MS": "60000"})
+        first = self._run_ptt({"KEYSTREL_PTT_DEBOUNCE_MS": "60000"})
+        second = self._run_ptt({"KEYSTREL_PTT_DEBOUNCE_MS": "60000"})
 
         self.assertEqual(first.returncode, 0)
         self.assertEqual(second.returncode, 0)
@@ -92,7 +92,7 @@ printf '%s' "${STT_CLIENT_TEXT:-hello world}"
 
     def test_lock_prevents_overlapping_runs(self):
         env = dict(self.base_env)
-        env.update({"STT_PTT_DEBOUNCE_MS": "0", "STT_CLIENT_SLEEP_MS": "400"})
+        env.update({"KEYSTREL_PTT_DEBOUNCE_MS": "0", "KEYSTREL_CLIENT_SLEEP_MS": "400"})
 
         first = subprocess.Popen(
             ["bash", str(PTT_SCRIPT)],

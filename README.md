@@ -1,10 +1,12 @@
-# STT Quickstart and Operating Guide
+# Keystrel Quickstart and Operating Guide
+
+![Keystrel mascot](docs/keystrel_logo.png)
 
 This project provides local, GPU-accelerated speech-to-text for Linux X11 workflows, with push-to-talk behavior that can type into any focused X11 text field (terminal, browser, editor, chat apps, and more).
 
-For deep implementation history and agent handoff context, read `AGENTS.md`.
-For command-only reference, use `CHEATSHEET.md`.
-For repeatable verification and smoke checks, use `TESTING.md`.
+For deep implementation history and agent handoff context, read `docs/AGENTS.md`.
+For command-only reference, use `docs/CHEATSHEET.md`.
+For repeatable verification and smoke checks, use `docs/TESTING.md`.
 
 ## What You Get
 
@@ -20,26 +22,32 @@ For repeatable verification and smoke checks, use `TESTING.md`.
 
 - Desktop/session requirement: X11 (for `xdotool` typing injection).
 - Backend model defaults: English-focused `large-v3` with stronger decoding search.
-- Keybinding example: `Ctrl+grave` runs `$HOME/.local/bin/stt-ptt`.
+- Keybinding example: `Ctrl+grave` runs `$HOME/.local/bin/keystrel-ptt`.
+
+## Naming Migration
+
+- Primary commands are now `keystrel-daemon`, `keystrel-client`, and `keystrel-ptt`.
+- Preferred environment variable prefix is `KEYSTREL_`.
+- Legacy `STT_` environment variables are still accepted for backward compatibility.
 
 ## High-Level Architecture
 
 There are 3 layers:
 
-1. `stt-daemon` (always-on backend)
+1. `keystrel-daemon` (always-on backend)
    - Loads Whisper model once and keeps it warm in VRAM.
    - Accepts requests over Unix socket and optional TCP (for Tailnet clients).
    - Returns transcript JSON.
 
-2. `stt-client` (capture/transcribe command)
+2. `keystrel-client` (capture/transcribe command)
    - Records mic audio.
    - Plays a short start chime before muting and listening.
    - Applies speech gating to reject environmental noise.
    - Sends local WAV path over Unix socket or WAV bytes to remote TCP server.
    - Prints transcript to stdout.
 
-3. `stt-ptt` (desktop typing integration)
-   - Calls `stt-client`.
+3. `keystrel-ptt` (desktop typing integration)
+   - Calls `keystrel-client`.
    - Cleans transcript text.
    - Types text into active window via `xdotool`.
    - Optional Enter key submit.
@@ -48,19 +56,19 @@ There are 3 layers:
 
 ```mermaid
 flowchart LR
-    U[User presses PTT\nCtrl+grave] --> P[stt-ptt]
+    U[User presses PTT\nCtrl+grave] --> P[keystrel-ptt]
     P --> C1[Play start chime\nlocal audio output]
-    C1 --> C2[stt-client capture\nVAD + noise gating]
+    C1 --> C2[keystrel-client capture\nVAD + noise gating]
     C2 --> D{Transport mode}
 
-    D -->|Local default| L1[Unix socket\n~/.cache/stt/faster-whisper.sock]
-    L1 --> S[stt-daemon\nGPU faster-whisper model]
+    D -->|Local default| L1[Unix socket\n~/.cache/keystrel/faster-whisper.sock]
+    L1 --> S[keystrel-daemon\nGPU faster-whisper model]
 
     D -->|Remote Tailnet| R1[TCP + auth token\ntcp://<tailscale-ip>:8765]
     R1 --> S
 
     S --> T[Transcript JSON response]
-    T --> P2[stt-ptt types text\ninto focused X11 field]
+    T --> P2[keystrel-ptt types text\ninto focused X11 field]
     P2 --> A[Terminal / Browser / Editor]
 ```
 
@@ -68,12 +76,12 @@ flowchart LR
 
 This repository keeps only project-local paths and templates:
 
-- `lib/` Python implementation (`stt_client.py`, `stt_daemon.py`)
-- `bin/` CLI wrappers (`stt-client`, `stt-daemon`, `stt-ptt`)
+- `lib/` Python implementation (`keystrel_client.py`, `keystrel_daemon.py`)
+- `bin/` CLI wrappers (`keystrel-client`, `keystrel-daemon`, `keystrel-ptt`)
 - `config/` example daemon env configuration
 - `venv/` venv activation helper
-- `client.env.example` remote client environment template
-- `TESTING.md` regression and smoke-test procedures
+- `keystrel-client.env.example` remote client environment template
+- `docs/` supplemental docs and project mascot image
 
 Runtime install locations (user home paths, service unit paths, and machine-specific env files) are intentionally not listed here.
 
@@ -86,7 +94,7 @@ APT packages used:
 - `xdotool`
 - `ffmpeg` (already present and useful for tests)
 
-Python packages in STT venv include:
+Python packages in Keystrel venv include:
 
 - `faster-whisper`
 - `ctranslate2`
@@ -107,10 +115,10 @@ python -m unittest discover -s tests -v
 Run syntax checks for main scripts:
 
 ```bash
-python -m py_compile lib/stt_client.py lib/stt_daemon.py
+python -m py_compile lib/keystrel_client.py lib/keystrel_daemon.py
 ```
 
-For full manual local and Tailnet smoke testing, see `TESTING.md`.
+For full manual local and Tailnet smoke testing, see `docs/TESTING.md`.
 
 ## Service Management
 
@@ -119,37 +127,37 @@ Daemon service is managed by user systemd.
 Check status:
 
 ```bash
-systemctl --user status stt-daemon
+systemctl --user status keystrel-daemon
 ```
 
 Restart service:
 
 ```bash
-systemctl --user restart stt-daemon
+systemctl --user restart keystrel-daemon
 ```
 
 View logs live:
 
 ```bash
-journalctl --user -u stt-daemon -f
+journalctl --user -u keystrel-daemon -f
 ```
 
 ## Centralized GPU over Tailscale
 
 You can run one GPU daemon for your Tailnet and use lightweight clients from other machines.
-No separate server app is required; the same `stt-daemon` process can expose both transports.
+No separate server app is required; the same `keystrel-daemon` process can expose both transports.
 
 ### Server node (GPU host)
 
-Set in `$HOME/.config/stt-daemon.env`:
+Set in `$HOME/.config/keystrel-daemon.env`:
 
 ```dotenv
-STT_SOCKET=~/.cache/stt/faster-whisper.sock
-STT_TCP_LISTEN=<tailscale-ip>
-STT_TCP_PORT=8765
-STT_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
-STT_MAX_REQUEST_BYTES=10485760
-STT_MAX_AUDIO_BYTES=6291456
+KEYSTREL_SOCKET=~/.cache/keystrel/faster-whisper.sock
+KEYSTREL_TCP_LISTEN=<tailscale-ip>
+KEYSTREL_TCP_PORT=8765
+KEYSTREL_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
+KEYSTREL_MAX_REQUEST_BYTES=10485760
+KEYSTREL_MAX_AUDIO_BYTES=6291456
 ```
 
 Use `tailscale ip -4` on the GPU node to get `<tailscale-ip>`.
@@ -157,7 +165,7 @@ Use `tailscale ip -4` on the GPU node to get `<tailscale-ip>`.
 Then restart daemon:
 
 ```bash
-systemctl --user restart stt-daemon
+systemctl --user restart keystrel-daemon
 ```
 
 ### Client node (any Tailnet machine)
@@ -165,36 +173,36 @@ systemctl --user restart stt-daemon
 Set client env (shell profile or launcher env):
 
 ```bash
-export STT_SERVER="tcp://<tailscale-ip>:8765"
-export STT_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
+export KEYSTREL_SERVER="tcp://<tailscale-ip>:8765"
+export KEYSTREL_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
 ```
 
 You can also start from the provided template:
 
 ```bash
-cp client.env.example .env
+cp keystrel-client.env.example .env
 ```
 
-`stt-client` and `stt-ptt` then keep local capture/chime/typing, while transcription runs on the remote GPU daemon.
+`keystrel-client` and `keystrel-ptt` then keep local capture/chime/typing, while transcription runs on the remote GPU daemon.
 
 ## Quickstart (Daily Usage)
 
 1. Ensure daemon is running:
 
 ```bash
-systemctl --user status stt-daemon
+systemctl --user status keystrel-daemon
 ```
 
 2. Optional device check:
 
 ```bash
-stt-client --list-devices
+keystrel-client --list-devices
 ```
 
 3. Test direct transcription path:
 
 ```bash
-stt-client --verbose
+keystrel-client --verbose
 ```
 
 4. Use push-to-talk in any focused text field:
@@ -208,7 +216,7 @@ stt-client --verbose
 
 ## Where PTT Works
 
-Because `stt-ptt` uses `xdotool type`, it targets the currently focused X11 window.
+Because `keystrel-ptt` uses `xdotool type`, it targets the currently focused X11 window.
 
 Common targets:
 
@@ -224,7 +232,7 @@ Practical note:
 
 ## Start Chime Behavior
 
-`stt-client` plays an audible chime right before output muting and microphone capture.
+`keystrel-client` plays an audible chime right before output muting and microphone capture.
 
 Chime backend selection:
 
@@ -236,7 +244,7 @@ Chime backend selection:
 
 PTT convenience behavior:
 
-- With `pipewire` backend and no `STT_CHIME_TARGET`, `pw-play` uses PipeWire auto-target routing.
+- With `pipewire` backend and no `KEYSTREL_CHIME_TARGET`, `pw-play` uses PipeWire auto-target routing.
 
 Why this exists:
 
@@ -251,7 +259,7 @@ Default order of operations:
 4. Record and transcribe.
 5. Restore sink mute state.
 
-## How `stt-client` Detects Speech
+## How `keystrel-client` Detects Speech
 
 The client uses layered gating to avoid triggering on fan noise/hum.
 
@@ -277,7 +285,7 @@ Fallback behavior:
 
 ## How Output Muting Works
 
-When enabled (default), `stt-client`:
+When enabled (default), `keystrel-client`:
 
 1. Plays the start chime.
 2. Enumerates output sinks with `pactl`.
@@ -291,40 +299,40 @@ This prevents speaker audio from being interpreted as mic speech and reduces fal
 
 Two lock layers prevent race conditions and repeated delayed output:
 
-- `stt-client` lock (`~/.cache/stt/stt-client.lock`)
+- `keystrel-client` lock (`~/.cache/keystrel/keystrel-client.lock`)
   - Prevents overlapping captures from racing sink state.
 
-- `stt-ptt` lock + debounce (`stt-ptt.lock`, `stt-ptt.last`)
+- `keystrel-ptt` lock + debounce (`keystrel-ptt.lock`, `keystrel-ptt.last`)
   - Prevents key auto-repeat from launching many concurrent jobs.
 
 ## Configuration
 
 ### Daemon configuration file
 
-Edit `$HOME/.config/stt-daemon.env`.
+Edit `$HOME/.config/keystrel-daemon.env`.
 
 Current defaults:
 
 ```dotenv
-STT_MODEL=large-v3
-STT_DEVICE=cuda
-STT_COMPUTE_TYPE=float16
-STT_BEAM_SIZE=5
-STT_BEST_OF=5
-STT_VAD_FILTER=1
-STT_LANGUAGE=en
-STT_SOCKET=~/.cache/stt/faster-whisper.sock
-STT_TCP_LISTEN=<tailscale-ip>
-STT_TCP_PORT=8765
-STT_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
-STT_MAX_REQUEST_BYTES=10485760
-STT_MAX_AUDIO_BYTES=6291456
+KEYSTREL_MODEL=large-v3
+KEYSTREL_DEVICE=cuda
+KEYSTREL_COMPUTE_TYPE=float16
+KEYSTREL_BEAM_SIZE=5
+KEYSTREL_BEST_OF=5
+KEYSTREL_VAD_FILTER=1
+KEYSTREL_LANGUAGE=en
+KEYSTREL_SOCKET=~/.cache/keystrel/faster-whisper.sock
+KEYSTREL_TCP_LISTEN=<tailscale-ip>
+KEYSTREL_TCP_PORT=8765
+KEYSTREL_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
+KEYSTREL_MAX_REQUEST_BYTES=10485760
+KEYSTREL_MAX_AUDIO_BYTES=6291456
 ```
 
 After edits, restart daemon:
 
 ```bash
-systemctl --user restart stt-daemon
+systemctl --user restart keystrel-daemon
 ```
 
 ### Client tuning flags (most important)
@@ -352,32 +360,32 @@ systemctl --user restart stt-daemon
 
 ### PTT behavior env vars
 
-- `STT_PTT_DEBOUNCE_MS` (default `0`)
-- `STT_TYPE_DELAY_MS` (default `1`)
-- `STT_PTT_SEND_ENTER` (`1` to press Enter after typing)
-- `STT_CLIENT_BIN` (override client path)
-- `STT_SERVER` (remote endpoint, e.g. `tcp://<tailscale-ip>:8765`)
-- `STT_SERVER_TOKEN` (shared token for remote mode)
-- `STT_SERVER_TIMEOUT` (remote connect/read timeout)
-- `STT_MUTE_START_DELAY_MS` (delay mute start; useful for Bluetooth chime audibility)
-- `STT_START_CHIME` (`1`/`0`)
-- `STT_CHIME_BACKEND` (`auto`, `pipewire`, `paplay`, `canberra`, `sounddevice`)
-- `STT_CHIME_FILE` (default `/usr/share/sounds/freedesktop/stereo/bell.oga`)
-- `STT_CHIME_SINK` (optional explicit sink, e.g. `@DEFAULT_SINK@`)
-- `STT_CHIME_TARGET` (optional PipeWire target node)
-- `STT_CHIME_ROLE` (PipeWire media role, default `Music`)
-- `STT_CHIME_EVENT_ID` (default `bell`)
-- `STT_CHIME_FREQ_HZ`, `STT_CHIME_DURATION_MS`, `STT_CHIME_VOLUME`, `STT_CHIME_COOLDOWN_MS`
+- `KEYSTREL_PTT_DEBOUNCE_MS` (default `0`)
+- `KEYSTREL_TYPE_DELAY_MS` (default `1`)
+- `KEYSTREL_PTT_SEND_ENTER` (`1` to press Enter after typing)
+- `KEYSTREL_CLIENT_BIN` (override client path)
+- `KEYSTREL_SERVER` (remote endpoint, e.g. `tcp://<tailscale-ip>:8765`)
+- `KEYSTREL_SERVER_TOKEN` (shared token for remote mode)
+- `KEYSTREL_SERVER_TIMEOUT` (remote connect/read timeout)
+- `KEYSTREL_MUTE_START_DELAY_MS` (delay mute start; useful for Bluetooth chime audibility)
+- `KEYSTREL_START_CHIME` (`1`/`0`)
+- `KEYSTREL_CHIME_BACKEND` (`auto`, `pipewire`, `paplay`, `canberra`, `sounddevice`)
+- `KEYSTREL_CHIME_FILE` (default `/usr/share/sounds/freedesktop/stereo/bell.oga`)
+- `KEYSTREL_CHIME_SINK` (optional explicit sink, e.g. `@DEFAULT_SINK@`)
+- `KEYSTREL_CHIME_TARGET` (optional PipeWire target node)
+- `KEYSTREL_CHIME_ROLE` (PipeWire media role, default `Music`)
+- `KEYSTREL_CHIME_EVENT_ID` (default `bell`)
+- `KEYSTREL_CHIME_FREQ_HZ`, `KEYSTREL_CHIME_DURATION_MS`, `KEYSTREL_CHIME_VOLUME`, `KEYSTREL_CHIME_COOLDOWN_MS`
 
 ### Wrapper override env vars
 
 Useful if runtime files are relocated:
 
-- `STT_ENV_FILE` (used by `stt-client` and `stt-daemon` wrappers)
-- `STT_CLIENT_PY` (override Python client script path)
-- `STT_DAEMON_PY` (override Python daemon script path)
-- `STT_SOCKET_TIMEOUT` (default client daemon-request timeout)
-- `STT_VENV_DIR` (override venv location used by `venv/env.sh`)
+- `KEYSTREL_ENV_FILE` (used by `keystrel-client` and `keystrel-daemon` wrappers)
+- `KEYSTREL_CLIENT_PY` (override Python client script path)
+- `KEYSTREL_DAEMON_PY` (override Python daemon script path)
+- `KEYSTREL_SOCKET_TIMEOUT` (default client daemon-request timeout)
+- `KEYSTREL_VENV_DIR` (override venv location used by `venv/env.sh`)
 
 ## Tuning Recipes
 
@@ -386,95 +394,95 @@ Useful if runtime files are relocated:
 Good mix of sensitivity and noise rejection:
 
 ```bash
-stt-client --verbose --webrtcvad-mode 2 --speech-ratio 0.60 --start-speech-chunks 2
+keystrel-client --verbose --webrtcvad-mode 2 --speech-ratio 0.60 --start-speech-chunks 2
 ```
 
 ### Noisy environment (stricter)
 
 ```bash
-stt-client --verbose --webrtcvad-mode 3 --speech-ratio 0.72 --start-speech-chunks 3
+keystrel-client --verbose --webrtcvad-mode 3 --speech-ratio 0.72 --start-speech-chunks 3
 ```
 
 ### If phrases are being missed (more permissive)
 
 ```bash
-stt-client --verbose --webrtcvad-mode 1 --speech-ratio 0.50 --start-speech-chunks 1
+keystrel-client --verbose --webrtcvad-mode 1 --speech-ratio 0.50 --start-speech-chunks 1
 ```
 
 ### Longer pause before auto-stop
 
 ```bash
-stt-client --silence-seconds 1.2
+keystrel-client --silence-seconds 1.2
 ```
 
 ### Use a specific microphone
 
 ```bash
-stt-client --list-devices
-stt-client --device 6 --verbose
+keystrel-client --list-devices
+keystrel-client --device 6 --verbose
 ```
 
 ### Disable mute for one run
 
 ```bash
-stt-client --no-mute-output
+keystrel-client --no-mute-output
 ```
 
 ### Disable chime for one run
 
 ```bash
-stt-client --no-start-chime
+keystrel-client --no-start-chime
 ```
 
 ### Lower-volume shorter chime
 
 ```bash
-stt-client --chime-volume 0.10 --chime-duration-ms 80
+keystrel-client --chime-volume 0.10 --chime-duration-ms 80
 ```
 
 ### Force direct PipeWire playback (recommended on modern Linux desktops)
 
 ```bash
-stt-client --chime-backend pipewire --chime-file "$HOME/.local/share/stt/chime_hi.wav"
+keystrel-client --chime-backend pipewire --chime-file "$HOME/.local/share/keystrel/chime_hi.wav"
 ```
 
 If your notification stream is suppressed, use a role with normal playback priority:
 
 ```bash
-stt-client --chime-backend pipewire --chime-role Music
+keystrel-client --chime-backend pipewire --chime-role Music
 ```
 
 ### Force direct bell-file playback (paplay)
 
 ```bash
-stt-client --chime-backend paplay --chime-file /usr/share/sounds/freedesktop/stereo/bell.oga
+keystrel-client --chime-backend paplay --chime-file /usr/share/sounds/freedesktop/stereo/bell.oga
 ```
 
 ### Target a specific output sink for chime
 
 ```bash
-stt-client --chime-backend paplay --chime-sink @DEFAULT_SINK@
+keystrel-client --chime-backend paplay --chime-sink @DEFAULT_SINK@
 ```
 
 ### Force desktop event backend
 
 ```bash
-stt-client --chime-backend canberra --chime-event-id bell
+keystrel-client --chime-backend canberra --chime-event-id bell
 ```
 
 ## Global Hotkey Notes
 
 Current binding points to:
 
-- `$HOME/.local/bin/stt-ptt`
+- `$HOME/.local/bin/keystrel-ptt`
 
-Use your desktop's global hotkey settings to run `$HOME/.local/bin/stt-ptt`.
+Use your desktop's global hotkey settings to run `$HOME/.local/bin/keystrel-ptt`.
 PTT will type into whichever X11 window currently has keyboard focus.
 
 Recommended hotkey behavior:
 
 ```bash
-# command: $HOME/.local/bin/stt-ptt
+# command: $HOME/.local/bin/keystrel-ptt
 # binding: Ctrl+grave (or any preferred global hotkey)
 ```
 
@@ -486,35 +494,35 @@ Conflict note:
 
 No transcript appears:
 
-- Check daemon: `systemctl --user status stt-daemon`
-- Check logs: `journalctl --user -u stt-daemon -n 80 --no-pager`
-- Test client directly: `stt-client --verbose`
-- Verify socket exists: `$HOME/.cache/stt/faster-whisper.sock`
+- Check daemon: `systemctl --user status keystrel-daemon`
+- Check logs: `journalctl --user -u keystrel-daemon -n 80 --no-pager`
+- Test client directly: `keystrel-client --verbose`
+- Verify socket exists: `$HOME/.cache/keystrel/faster-whisper.sock`
 - Expected secure permissions: socket dir `drwx------`, socket file `srw-------`
 
-Remote mode issues (`STT_SERVER` set):
+Remote mode issues (`KEYSTREL_SERVER` set):
 
 - Verify TCP listener on server node: `ss -ltn | rg 8765`
 - Verify Tailnet reachability: `tailscale ping <tailscale-ip>`
-- Verify token match on both sides: `STT_SERVER_TOKEN`
-- Force explicit call: `STT_SERVER=tcp://<tailscale-ip>:8765 STT_SERVER_TOKEN=... stt-client --verbose --no-start-chime`
+- Verify token match on both sides: `KEYSTREL_SERVER_TOKEN`
+- Force explicit call: `KEYSTREL_SERVER=tcp://<tailscale-ip>:8765 KEYSTREL_SERVER_TOKEN=... keystrel-client --verbose --no-start-chime`
 
 PTT key does nothing:
 
-- Confirm hotkey command path is `$HOME/.local/bin/stt-ptt`.
+- Confirm hotkey command path is `$HOME/.local/bin/keystrel-ptt`.
 - Confirm `xdotool` exists: `xdotool -v`.
 - Confirm session is X11: `echo "$XDG_SESSION_TYPE"`.
 
 No start chime heard:
 
-- Confirm chime is enabled (`STT_START_CHIME` not set to `0`).
+- Confirm chime is enabled (`KEYSTREL_START_CHIME` not set to `0`).
 - Confirm system output is not already muted at desktop level.
-- Test directly: `stt-client --verbose --max-seconds 0.5`.
-- Force PipeWire path: `stt-client --verbose --chime-backend pipewire --max-seconds 0.5`.
-- Force bell-file path: `stt-client --verbose --chime-backend paplay --max-seconds 0.5`.
-- Force desktop event sound path: `stt-client --verbose --chime-backend canberra --max-seconds 0.5`.
-- Check routing: `pactl info | rg "Default Sink"` and set `--chime-sink` / `STT_CHIME_SINK` if needed.
-- For PipeWire routing issues: set `STT_CHIME_TARGET` to a concrete node name from `wpctl status`.
+- Test directly: `keystrel-client --verbose --max-seconds 0.5`.
+- Force PipeWire path: `keystrel-client --verbose --chime-backend pipewire --max-seconds 0.5`.
+- Force bell-file path: `keystrel-client --verbose --chime-backend paplay --max-seconds 0.5`.
+- Force desktop event sound path: `keystrel-client --verbose --chime-backend canberra --max-seconds 0.5`.
+- Check routing: `pactl info | rg "Default Sink"` and set `--chime-sink` / `KEYSTREL_CHIME_SINK` if needed.
+- For PipeWire routing issues: set `KEYSTREL_CHIME_TARGET` to a concrete node name from `wpctl status`.
 - If chime is clipped by immediate mute, set a tiny holdoff: `--chime-cooldown-ms 30` to `60`.
 
 Too many false activations:
@@ -522,7 +530,7 @@ Too many false activations:
 - Raise strictness:
 
 ```bash
-stt-client --webrtcvad-mode 3 --speech-ratio 0.72 --start-speech-chunks 3
+keystrel-client --webrtcvad-mode 3 --speech-ratio 0.72 --start-speech-chunks 3
 ```
 
 Speech frequently missed:
@@ -530,7 +538,7 @@ Speech frequently missed:
 - Relax strictness:
 
 ```bash
-stt-client --webrtcvad-mode 1 --speech-ratio 0.50 --start-speech-chunks 1
+keystrel-client --webrtcvad-mode 1 --speech-ratio 0.50 --start-speech-chunks 1
 ```
 
 Audio output remains muted:
@@ -557,20 +565,20 @@ When modifying behavior:
 
 ```bash
 source "$HOME/.venvs/faster-whisper/env.sh"
-python -m py_compile "$HOME/.local/lib/stt/stt_client.py" "$HOME/.local/lib/stt/stt_daemon.py"
+python -m py_compile "$HOME/.local/lib/keystrel/keystrel_client.py" "$HOME/.local/lib/keystrel/keystrel_daemon.py"
 ```
 
 3. Restart and verify daemon:
 
 ```bash
-systemctl --user restart stt-daemon
-systemctl --user status stt-daemon
+systemctl --user restart keystrel-daemon
+systemctl --user status keystrel-daemon
 ```
 
 4. Run smoke test:
 
 ```bash
-stt-client --verbose --max-seconds 1.5
+keystrel-client --verbose --max-seconds 1.5
 ```
 
 5. Sync mirror files into your repository workspace when needed.

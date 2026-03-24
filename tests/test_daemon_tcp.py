@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from tests._module_loader import load_daemon_module
 
 
-stt_daemon = load_daemon_module()
+keystrel_daemon = load_daemon_module()
 
 
 class FakeModel:
@@ -27,7 +27,7 @@ class FakeModel:
 class RunningTCPServer:
     def __init__(self, max_request_bytes=4096, max_audio_bytes=1024, token="secret-token"):
         self.model = FakeModel()
-        self.server = stt_daemon.STTTCPServer(
+        self.server = keystrel_daemon.KeystrelTCPServer(
             "127.0.0.1",
             0,
             self.model,

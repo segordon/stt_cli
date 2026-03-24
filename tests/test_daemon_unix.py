@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from tests._module_loader import load_daemon_module
 
 
-stt_daemon = load_daemon_module()
+keystrel_daemon = load_daemon_module()
 
 
 class FakeModel:
@@ -29,9 +29,9 @@ class RunningUnixServer:
     def __init__(self, max_request_bytes=4096, max_audio_bytes=1024):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
-        self.socket_path = self.temp_dir / "stt.sock"
+        self.socket_path = self.temp_dir / "keystrel.sock"
         self.model = FakeModel()
-        self.server = stt_daemon.STTUnixServer(
+        self.server = keystrel_daemon.KeystrelUnixServer(
             self.socket_path,
             self.model,
             {

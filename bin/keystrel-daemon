@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "$script_dir/.." && pwd)"
+
+keystrel_env_file="${KEYSTREL_ENV_FILE:-${STT_ENV_FILE:-$repo_root/venv/env.sh}}"
+keystrel_daemon_py="${KEYSTREL_DAEMON_PY:-${STT_DAEMON_PY:-$repo_root/lib/keystrel_daemon.py}}"
+
+if [[ ! -f "$keystrel_env_file" ]]; then
+  printf '[keystrel-daemon] missing env file: %s\n' "$keystrel_env_file" >&2
+  exit 2
+fi
+
+if [[ ! -f "$keystrel_daemon_py" ]]; then
+  printf '[keystrel-daemon] missing daemon script: %s\n' "$keystrel_daemon_py" >&2
+  exit 3
+fi
+
+source "$keystrel_env_file"
+exec python "$keystrel_daemon_py" "$@"

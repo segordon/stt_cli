@@ -8,7 +8,7 @@ from unittest import mock
 from tests._module_loader import load_client_module
 
 
-stt_client = load_client_module()
+keystrel_client = load_client_module()
 
 
 class _FakeAudio:
@@ -43,12 +43,12 @@ class ClientMainFlowTests(unittest.TestCase):
     def test_list_devices_returns_before_lock(self):
         args = _base_args(list_devices=True)
         with (
-            mock.patch.object(stt_client, "parse_args", return_value=args),
-            mock.patch.object(stt_client.sd, "query_devices", return_value=["mic0"], create=True),
-            mock.patch.object(stt_client, "acquire_client_lock") as acquire_lock,
+            mock.patch.object(keystrel_client, "parse_args", return_value=args),
+            mock.patch.object(keystrel_client.sd, "query_devices", return_value=["mic0"], create=True),
+            mock.patch.object(keystrel_client, "acquire_client_lock") as acquire_lock,
             mock.patch("sys.stdout", new=io.StringIO()) as stdout,
         ):
-            stt_client.main()
+            keystrel_client.main()
 
         self.assertIn("mic0", stdout.getvalue())
         acquire_lock.assert_not_called()
@@ -57,21 +57,21 @@ class ClientMainFlowTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             args = _base_args(socket=str(Path(tmp_dir) / "missing.sock"))
             with (
-                mock.patch.object(stt_client, "parse_args", return_value=args),
-                mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
             ):
                 with self.assertRaises(SystemExit) as ctx:
-                    stt_client.main()
+                    keystrel_client.main()
         self.assertEqual(ctx.exception.code, 2)
 
     def test_remote_mode_requires_token(self):
         args = _base_args(server="tcp://127.0.0.1:8765", server_token="")
         with (
-            mock.patch.object(stt_client, "parse_args", return_value=args),
-            mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
+            mock.patch.object(keystrel_client, "parse_args", return_value=args),
+            mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
         ):
             with self.assertRaises(SystemExit) as ctx:
-                stt_client.main()
+                keystrel_client.main()
         self.assertEqual(ctx.exception.code, 2)
 
     def test_capture_failure_exits_with_code_3(self):
@@ -81,13 +81,13 @@ class ClientMainFlowTests(unittest.TestCase):
             args = _base_args(socket=str(socket_path))
 
             with (
-                mock.patch.object(stt_client, "parse_args", return_value=args),
-                mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
-                mock.patch.object(stt_client, "play_start_chime"),
-                mock.patch.object(stt_client, "record_until_silence", side_effect=RuntimeError("mic fail")),
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime"),
+                mock.patch.object(keystrel_client, "record_until_silence", side_effect=RuntimeError("mic fail")),
             ):
                 with self.assertRaises(SystemExit) as ctx:
-                    stt_client.main()
+                    keystrel_client.main()
 
         self.assertEqual(ctx.exception.code, 3)
 
@@ -101,15 +101,15 @@ class ClientMainFlowTests(unittest.TestCase):
                 Path(path).write_bytes(b"fake-wav")
 
             with (
-                mock.patch.object(stt_client, "parse_args", return_value=args),
-                mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
-                mock.patch.object(stt_client, "play_start_chime"),
-                mock.patch.object(stt_client, "record_until_silence", return_value=_FakeAudio(1)),
-                mock.patch.object(stt_client.sf, "write", side_effect=_fake_write, create=True),
-                mock.patch.object(stt_client, "send_unix_request", side_effect=RuntimeError("boom")),
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime"),
+                mock.patch.object(keystrel_client, "record_until_silence", return_value=_FakeAudio(1)),
+                mock.patch.object(keystrel_client.sf, "write", side_effect=_fake_write, create=True),
+                mock.patch.object(keystrel_client, "send_unix_request", side_effect=RuntimeError("boom")),
             ):
                 with self.assertRaises(SystemExit) as ctx:
-                    stt_client.main()
+                    keystrel_client.main()
 
         self.assertEqual(ctx.exception.code, 4)
 
@@ -123,15 +123,15 @@ class ClientMainFlowTests(unittest.TestCase):
                 Path(path).write_bytes(b"fake-wav")
 
             with (
-                mock.patch.object(stt_client, "parse_args", return_value=args),
-                mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
-                mock.patch.object(stt_client, "play_start_chime"),
-                mock.patch.object(stt_client, "record_until_silence", return_value=_FakeAudio(1)),
-                mock.patch.object(stt_client.sf, "write", side_effect=_fake_write, create=True),
-                mock.patch.object(stt_client, "send_unix_request", return_value={"ok": False, "error": "bad"}),
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime"),
+                mock.patch.object(keystrel_client, "record_until_silence", return_value=_FakeAudio(1)),
+                mock.patch.object(keystrel_client.sf, "write", side_effect=_fake_write, create=True),
+                mock.patch.object(keystrel_client, "send_unix_request", return_value={"ok": False, "error": "bad"}),
             ):
                 with self.assertRaises(SystemExit) as ctx:
-                    stt_client.main()
+                    keystrel_client.main()
 
         self.assertEqual(ctx.exception.code, 5)
 
@@ -143,14 +143,14 @@ class ClientMainFlowTests(unittest.TestCase):
 
             stdout = io.StringIO()
             with (
-                mock.patch.object(stt_client, "parse_args", return_value=args),
-                mock.patch.object(stt_client, "acquire_client_lock", return_value=io.StringIO()),
-                mock.patch.object(stt_client, "play_start_chime"),
-                mock.patch.object(stt_client, "record_until_silence", return_value=_FakeAudio(0)),
-                mock.patch.object(stt_client, "send_unix_request") as send_unix,
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime"),
+                mock.patch.object(keystrel_client, "record_until_silence", return_value=_FakeAudio(0)),
+                mock.patch.object(keystrel_client, "send_unix_request") as send_unix,
                 mock.patch("sys.stdout", new=stdout),
             ):
-                stt_client.main()
+                keystrel_client.main()
 
         self.assertEqual(stdout.getvalue(), "")
         send_unix.assert_not_called()

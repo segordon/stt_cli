@@ -10,7 +10,7 @@ from unittest import mock
 from tests._module_loader import load_daemon_module
 
 
-stt_daemon = load_daemon_module()
+keystrel_daemon = load_daemon_module()
 
 
 def _base_args(**overrides):
@@ -107,26 +107,26 @@ class _FakeTCPServer(_FakeServer):
 class DaemonMainGuardTests(unittest.TestCase):
     def test_tcp_listener_requires_token(self):
         args = _base_args(socket="", tcp_listen="127.0.0.1", server_token="")
-        with mock.patch.object(stt_daemon, "parse_args", return_value=args):
+        with mock.patch.object(keystrel_daemon, "parse_args", return_value=args):
             with self.assertRaises(SystemExit) as ctx:
-                stt_daemon.main()
+                keystrel_daemon.main()
         self.assertEqual(ctx.exception.code, 2)
 
     def test_invalid_tcp_port_exits(self):
         args = _base_args(socket="", tcp_listen="127.0.0.1", server_token="token", tcp_port=70000)
-        with mock.patch.object(stt_daemon, "parse_args", return_value=args):
+        with mock.patch.object(keystrel_daemon, "parse_args", return_value=args):
             with self.assertRaises(SystemExit) as ctx:
-                stt_daemon.main()
+                keystrel_daemon.main()
         self.assertEqual(ctx.exception.code, 2)
 
     def test_no_transports_enabled_exits(self):
         args = _base_args(socket="", tcp_listen="", server_token="")
         with (
-            mock.patch.object(stt_daemon, "parse_args", return_value=args),
-            mock.patch.object(stt_daemon, "WhisperModel", _FakeWhisperModel),
+            mock.patch.object(keystrel_daemon, "parse_args", return_value=args),
+            mock.patch.object(keystrel_daemon, "WhisperModel", _FakeWhisperModel),
         ):
             with self.assertRaises(SystemExit) as ctx:
-                stt_daemon.main()
+                keystrel_daemon.main()
         self.assertEqual(ctx.exception.code, 2)
 
 
@@ -136,7 +136,7 @@ class DaemonMainDualTransportTests(unittest.TestCase):
         _FakeTCPServer.instances = []
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            socket_path = Path(tmp_dir) / "stt.sock"
+            socket_path = Path(tmp_dir) / "keystrel.sock"
             args = _base_args(
                 socket=str(socket_path),
                 tcp_listen="127.0.0.1",
@@ -162,13 +162,13 @@ class DaemonMainDualTransportTests(unittest.TestCase):
             trigger_thread.start()
 
             with (
-                mock.patch.object(stt_daemon, "parse_args", return_value=args),
-                mock.patch.object(stt_daemon, "WhisperModel", _FakeWhisperModel),
-                mock.patch.object(stt_daemon, "STTUnixServer", _FakeUnixServer),
-                mock.patch.object(stt_daemon, "STTTCPServer", _FakeTCPServer),
-                mock.patch.object(stt_daemon.signal, "signal", side_effect=_fake_signal),
+                mock.patch.object(keystrel_daemon, "parse_args", return_value=args),
+                mock.patch.object(keystrel_daemon, "WhisperModel", _FakeWhisperModel),
+                mock.patch.object(keystrel_daemon, "KeystrelUnixServer", _FakeUnixServer),
+                mock.patch.object(keystrel_daemon, "KeystrelTCPServer", _FakeTCPServer),
+                mock.patch.object(keystrel_daemon.signal, "signal", side_effect=_fake_signal),
             ):
-                stt_daemon.main()
+                keystrel_daemon.main()
 
             trigger_thread.join(timeout=1.0)
 
