@@ -102,7 +102,7 @@ def parse_args():
     parser.add_argument(
         "--server",
         default=os.environ.get("STT_SERVER", ""),
-        help="optional remote server URL, e.g. tcp://100.94.143.124:8765",
+        help="optional remote server URL, e.g. tcp://<tailscale-ip>:8765",
     )
     parser.add_argument(
         "--server-token",
@@ -377,7 +377,12 @@ def parse_server_endpoint(server_url):
     if not host:
         raise ValueError("STT_SERVER is missing host")
 
-    port = parsed.port if parsed.port is not None else 8765
+    try:
+        parsed_port = parsed.port
+    except ValueError as exc:
+        raise ValueError(f"invalid STT_SERVER port: {exc}") from exc
+
+    port = parsed_port if parsed_port is not None else 8765
     if port <= 0 or port > 65535:
         raise ValueError(f"invalid STT_SERVER port: {port}")
 
@@ -916,26 +921,28 @@ def send_tcp_request(host, port, payload, timeout_s, max_response_bytes=2 * 1024
     data = (json.dumps(payload, ensure_ascii=True) + "\n").encode("utf-8")
 
     try:
-        with socket.create_connection((host, port), timeout=timeout_s) as sock:
-            sock.settimeout(timeout_s)
-            try:
-                sock.sendall(data)
-                response = b""
-                while not response.endswith(b"\n"):
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    response += chunk
-                    if len(response) > max_response_bytes:
-                        raise RuntimeError("remote response exceeded size limit")
-            except socket.timeout as exc:
-                raise TimeoutError(
-                    f"remote server request timed out after {timeout_s:.1f}s"
-                ) from exc
+        sock = socket.create_connection((host, port), timeout=timeout_s)
     except socket.timeout as exc:
         raise TimeoutError(f"remote server connect timed out after {timeout_s:.1f}s") from exc
     except OSError as exc:
         raise RuntimeError(f"remote server connection failed: {exc}") from exc
+
+    with sock:
+        sock.settimeout(timeout_s)
+        try:
+            sock.sendall(data)
+            response = b""
+            while not response.endswith(b"\n"):
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+                if len(response) > max_response_bytes:
+                    raise RuntimeError("remote response exceeded size limit")
+        except socket.timeout as exc:
+            raise TimeoutError(
+                f"remote server request timed out after {timeout_s:.1f}s"
+            ) from exc
 
     if not response:
         raise RuntimeError("empty response from remote server")

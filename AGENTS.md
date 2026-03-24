@@ -6,6 +6,13 @@ This file documents what has been built so far for the Ubuntu GPU speech-to-text
 
 Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows (including interactive prompt tools), with practical push-to-talk behavior and no dependency on piping stdin into the app.
 
+## Cost Policy
+
+- Do not use GitHub Actions for this repository.
+- Do not use or enable any GitHub feature that may incur cost.
+- Do not add CI workflows under `.github/workflows/`.
+- Keep testing and automation local (CLI commands documented in repo docs).
+
 ## Current Environment
 
 - OS/session: Ubuntu derivative, GNOME, X11 session.
@@ -37,7 +44,7 @@ Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows
 - Added daemon script: `/home/user/.local/lib/stt/stt_daemon.py`
 - Daemon runs a persistent Whisper model and serves requests over Unix socket and optional TCP.
 - Socket default: `/home/user/.cache/stt/faster-whisper.sock`
-- TCP defaults (when enabled): `100.94.143.124:8765`
+- TCP defaults (when enabled): `<tailscale-ip>:8765`
 - Protocol: single-line JSON request/response over AF_UNIX or TCP stream.
 
 Unix request (minimum):
@@ -196,7 +203,7 @@ The same daemon process now supports optional TCP transport for Tailnet clients.
 
 Server-side env (GPU node):
 
-- `STT_TCP_LISTEN=100.94.143.124`
+- `STT_TCP_LISTEN=<tailscale-ip>`
 - `STT_TCP_PORT=8765`
 - `STT_SERVER_TOKEN=<long-random-secret>`
 - `STT_MAX_REQUEST_BYTES=10485760`
@@ -204,7 +211,7 @@ Server-side env (GPU node):
 
 Client-side env (any node):
 
-- `STT_SERVER=tcp://100.94.143.124:8765`
+- `STT_SERVER=tcp://<tailscale-ip>:8765`
 - `STT_SERVER_TOKEN=<same-secret>`
 - `STT_SERVER_TIMEOUT=<seconds>`
 

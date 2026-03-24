@@ -4,6 +4,7 @@ This project provides local, GPU-accelerated speech-to-text for Ubuntu GNOME wor
 
 For deep implementation history and agent handoff context, read `AGENTS.md`.
 For command-only reference, use `CHEATSHEET.md`.
+For repeatable verification and smoke checks, use `TESTING.md`.
 
 ## What You Get
 
@@ -55,7 +56,7 @@ flowchart LR
     D -->|Local default| L1[Unix socket\n~/.cache/stt/faster-whisper.sock]
     L1 --> S[stt-daemon\nGPU faster-whisper model]
 
-    D -->|Remote Tailnet| R1[TCP + auth token\ntcp://100.94.143.124:8765]
+    D -->|Remote Tailnet| R1[TCP + auth token\ntcp://<tailscale-ip>:8765]
     R1 --> S
 
     S --> T[Transcript JSON response]
@@ -72,6 +73,7 @@ This repository keeps only project-local paths and templates:
 - `config/` example daemon env configuration
 - `venv/` venv activation helper
 - `client.env.example` remote client environment template
+- `TESTING.md` regression and smoke-test procedures
 
 Runtime install locations (user home paths, service unit paths, and machine-specific env files) are intentionally not listed here.
 
@@ -93,6 +95,22 @@ Python packages in STT venv include:
 - `webrtcvad-wheels`
 - `nvidia-cublas-cu12`
 - `nvidia-cudnn-cu12`
+
+## Automated Testing
+
+Run unit tests (no microphone/GPU required):
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Run syntax checks for main scripts:
+
+```bash
+python -m py_compile lib/stt_client.py lib/stt_daemon.py
+```
+
+For full manual local and Tailnet smoke testing, see `TESTING.md`.
 
 ## Service Management
 
@@ -123,16 +141,18 @@ No separate server app is required; the same `stt-daemon` process can expose bot
 
 ### Server node (GPU host)
 
-Set in `/home/user/.config/stt-daemon.env`:
+Set in `$HOME/.config/stt-daemon.env`:
 
 ```dotenv
 STT_SOCKET=~/.cache/stt/faster-whisper.sock
-STT_TCP_LISTEN=100.94.143.124
+STT_TCP_LISTEN=<tailscale-ip>
 STT_TCP_PORT=8765
 STT_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 STT_MAX_REQUEST_BYTES=10485760
 STT_MAX_AUDIO_BYTES=6291456
 ```
+
+Use `tailscale ip -4` on the GPU node to get `<tailscale-ip>`.
 
 Then restart daemon:
 
@@ -145,7 +165,7 @@ systemctl --user restart stt-daemon
 Set client env (shell profile or launcher env):
 
 ```bash
-export STT_SERVER="tcp://100.94.143.124:8765"
+export STT_SERVER="tcp://<tailscale-ip>:8765"
 export STT_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
 ```
 
@@ -294,7 +314,7 @@ STT_BEST_OF=5
 STT_VAD_FILTER=1
 STT_LANGUAGE=en
 STT_SOCKET=~/.cache/stt/faster-whisper.sock
-STT_TCP_LISTEN=100.94.143.124
+STT_TCP_LISTEN=<tailscale-ip>
 STT_TCP_PORT=8765
 STT_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
 STT_MAX_REQUEST_BYTES=10485760
@@ -317,7 +337,7 @@ systemctl --user restart stt-daemon
 - `--silence-seconds` (larger = waits longer before stopping)
 - `--threshold` and `--noise-multiplier` (fallback RMS path)
 - `--socket-timeout` (bounds daemon request wait time)
-- `--server` (remote endpoint, e.g. `tcp://100.94.143.124:8765`)
+- `--server` (remote endpoint, e.g. `tcp://<tailscale-ip>:8765`)
 - `--server-token` (shared token for remote TCP mode)
 - `--server-timeout` (bounds remote connect/read wait time)
 - `--mute-start-delay-ms` (delay output muting after capture starts)
@@ -336,7 +356,7 @@ systemctl --user restart stt-daemon
 - `STT_TYPE_DELAY_MS` (default `1`)
 - `STT_PTT_SEND_ENTER` (`1` to press Enter after typing)
 - `STT_CLIENT_BIN` (override client path)
-- `STT_SERVER` (remote endpoint, e.g. `tcp://100.94.143.124:8765`)
+- `STT_SERVER` (remote endpoint, e.g. `tcp://<tailscale-ip>:8765`)
 - `STT_SERVER_TOKEN` (shared token for remote mode)
 - `STT_SERVER_TIMEOUT` (remote connect/read timeout)
 - `STT_MUTE_START_DELAY_MS` (delay mute start; useful for Bluetooth chime audibility)
@@ -476,9 +496,9 @@ No transcript appears:
 Remote mode issues (`STT_SERVER` set):
 
 - Verify TCP listener on server node: `ss -ltn | rg 8765`
-- Verify Tailnet reachability: `tailscale ping 100.94.143.124`
+- Verify Tailnet reachability: `tailscale ping <tailscale-ip>`
 - Verify token match on both sides: `STT_SERVER_TOKEN`
-- Force explicit call: `STT_SERVER=tcp://100.94.143.124:8765 STT_SERVER_TOKEN=... stt-client --verbose --no-start-chime`
+- Force explicit call: `STT_SERVER=tcp://<tailscale-ip>:8765 STT_SERVER_TOKEN=... stt-client --verbose --no-start-chime`
 
 PTT key does nothing:
 

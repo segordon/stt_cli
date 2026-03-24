@@ -1,0 +1,143 @@
+# STT Testing Guide
+
+This document defines the repeatable test flow now that feature work is paused.
+
+## 1) Fast Regression Checks
+
+Run these first after any code or config change:
+
+```bash
+python -m unittest discover -s tests -v
+python -m py_compile lib/stt_client.py lib/stt_daemon.py
+```
+
+What unit tests currently cover:
+
+- `STT_SERVER` endpoint parsing and validation rules.
+- Client request option payload construction.
+- Client Unix/TCP request error handling (timeouts, empty/invalid/oversize responses).
+- Unix-socket request validation and local `audio_path` handling.
+- TCP transport auth checks (missing token, bad token).
+- TCP request/audio payload size limits.
+- TCP behavior for disallowed `audio_path` and valid `audio_b64` flow.
+- Daemon socket path safety behavior for stale/missing/non-socket paths.
+
+## 2) Local Runtime Smoke Test (Unix Socket)
+
+Server node:
+
+```bash
+systemctl --user restart stt-daemon
+systemctl --user is-active stt-daemon
+```
+
+Client smoke test:
+
+```bash
+stt-client --verbose --max-seconds 1.5
+```
+
+Expected:
+
+- service is `active`
+- client returns without crash/hang
+- transcript output is printed (or empty on silence)
+
+## 3) Remote Runtime Smoke Test (Tailscale TCP)
+
+On GPU server node:
+
+1. Find Tailnet IP:
+
+```bash
+tailscale ip -4
+```
+
+2. Set daemon env (`$HOME/.config/stt-daemon.env`):
+
+```dotenv
+STT_TCP_LISTEN=<tailscale-ip>
+STT_TCP_PORT=8765
+STT_SERVER_TOKEN=<shared-secret>
+```
+
+3. Restart and verify listener:
+
+```bash
+systemctl --user restart stt-daemon
+ss -ltn | rg 8765
+```
+
+On client node:
+
+```bash
+export STT_SERVER="tcp://<tailscale-ip>:8765"
+export STT_SERVER_TOKEN="<shared-secret>"
+stt-client --verbose --no-start-chime
+```
+
+Expected:
+
+- client connects successfully and returns a transcript response
+- no local daemon socket is required on the client node
+
+## 4) Security/Failure Checks
+
+Run these checks whenever auth/transport code changes:
+
+- invalid token request is rejected with `unauthorized` error
+- missing token request is rejected with `unauthorized` error
+- oversize request line is rejected with `request too large`
+- oversize decoded audio payload is rejected with size-limit error
+
+These checks are covered by unit tests and should stay green before release.
+
+## 5) Release Readiness Checklist
+
+- unit tests pass
+- Python syntax checks pass
+- local Unix-socket smoke test passes
+- remote Tailnet smoke test passes
+- docs updated (`README.md`, `CHEATSHEET.md`, `TESTING.md`, `AGENTS.md` as needed)
+- no real secrets committed (`STT_SERVER_TOKEN` must remain placeholder in repo files)
+
+## 6) Desktop/Audio Manual Test Strategies
+
+Some behavior depends on live audio devices, desktop session state, and human interaction.
+Use this checklist for release validation on a real workstation.
+
+PTT typing and focus routing (X11):
+
+```bash
+echo "$XDG_SESSION_TYPE"
+stt-ptt
+```
+
+Verify transcript lands in the actively focused text field and lock/debounce prevent duplicate runs.
+
+Chime backend audibility and routing:
+
+```bash
+stt-client --verbose --max-seconds 0.5 --chime-backend pipewire
+stt-client --verbose --max-seconds 0.5 --chime-backend paplay
+stt-client --verbose --max-seconds 0.5 --chime-backend canberra
+```
+
+Mute/restore behavior across sinks:
+
+```bash
+pactl list short sinks
+stt-client --verbose --max-seconds 1.5
+pactl list short sinks
+```
+
+Confirm sink mute states are restored to original values.
+
+Microphone/VAD quality pass:
+
+```bash
+stt-client --verbose --webrtcvad-mode 2 --speech-ratio 0.60 --start-speech-chunks 2
+stt-client --verbose --webrtcvad-mode 3 --speech-ratio 0.72 --start-speech-chunks 3
+```
+
+Validate false-trigger resistance in background noise and sentence pickup for normal speech.

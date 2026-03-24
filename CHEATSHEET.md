@@ -40,14 +40,32 @@ Use specific mic:
 stt-client --device 6 --verbose
 ```
 
+Run unit tests:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+Run Python syntax checks:
+
+```bash
+python -m py_compile lib/stt_client.py lib/stt_daemon.py
+```
+
 ## Tailscale Remote Mode
 
 Server node (`/home/user/.config/stt-daemon.env`):
 
 ```dotenv
-STT_TCP_LISTEN=100.94.143.124
+STT_TCP_LISTEN=<tailscale-ip>
 STT_TCP_PORT=8765
 STT_SERVER_TOKEN=REPLACE_WITH_LONG_RANDOM_SECRET
+```
+
+Find `<tailscale-ip>`:
+
+```bash
+tailscale ip -4
 ```
 
 Restart server daemon:
@@ -59,7 +77,7 @@ systemctl --user restart stt-daemon
 Client node env:
 
 ```bash
-export STT_SERVER="tcp://100.94.143.124:8765"
+export STT_SERVER="tcp://<tailscale-ip>:8765"
 export STT_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
 ```
 
@@ -217,7 +235,7 @@ ss -ltn | rg 8765
 Remote mode quick check from client node:
 
 ```bash
-STT_SERVER=tcp://100.94.143.124:8765 STT_SERVER_TOKEN=... stt-client --verbose --no-start-chime
+STT_SERVER=tcp://<tailscale-ip>:8765 STT_SERVER_TOKEN=... stt-client --verbose --no-start-chime
 ```
 
 Expected secure permissions:
