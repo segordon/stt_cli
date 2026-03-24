@@ -1,0 +1,13 @@
+[Unit]
+Description=GPU faster-whisper STT daemon
+After=default.target
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/stt-daemon.env
+ExecStart=%h/.local/bin/stt-daemon
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target

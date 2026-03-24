@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+stt_env_file="${STT_ENV_FILE:-$HOME/.venvs/faster-whisper/env.sh}"
+stt_daemon_py="${STT_DAEMON_PY:-$HOME/.local/lib/stt/stt_daemon.py}"
+
+if [[ ! -f "$stt_env_file" ]]; then
+  printf '[stt-daemon] missing env file: %s\n' "$stt_env_file" >&2
+  exit 2
+fi
+
+if [[ ! -f "$stt_daemon_py" ]]; then
+  printf '[stt-daemon] missing daemon script: %s\n' "$stt_daemon_py" >&2
+  exit 3
+fi
+
+source "$stt_env_file"
+exec python "$stt_daemon_py" "$@"

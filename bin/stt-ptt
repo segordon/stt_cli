@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${XDG_RUNTIME_DIR:-$HOME/.cache/stt}"
+mkdir -p "$state_dir"
+lock_file="$state_dir/stt-ptt.lock"
+stamp_file="$state_dir/stt-ptt.last"
+debounce_ms="${STT_PTT_DEBOUNCE_MS:-1200}"
+stt_client_bin="${STT_CLIENT_BIN:-$HOME/.local/bin/stt-client}"
+type_delay_ms="${STT_TYPE_DELAY_MS:-1}"
+
+if ! [[ "$debounce_ms" =~ ^[0-9]+$ ]]; then
+  debounce_ms=1200
+fi
+
+if ! [[ "$type_delay_ms" =~ ^[0-9]+$ ]]; then
+  type_delay_ms=1
+fi
+
+if ! command -v flock >/dev/null 2>&1; then
+  printf '[stt-ptt] missing flock; install util-linux\n' >&2
+  exit 5
+fi
+
+if [[ "${XDG_SESSION_TYPE:-}" != "x11" ]]; then
+  printf '[stt-ptt] this command currently requires an X11 session\n' >&2
+  exit 2
+fi
+
+if [[ ! -x "$stt_client_bin" ]]; then
+  printf '[stt-ptt] missing executable stt-client at %s\n' "$stt_client_bin" >&2
+  exit 3
+fi
+
+if ! command -v xdotool >/dev/null 2>&1; then
+  printf '[stt-ptt] missing xdotool; install package xdotool\n' >&2
+  exit 4
+fi
+
+exec 9>"$lock_file"
+if ! flock -n 9; then
+  exit 0
+fi
+
+now_ms="$(date +%s%3N)"
+if [[ -f "$stamp_file" ]]; then
+  last_ms="$(<"$stamp_file")"
+  if [[ "$last_ms" =~ ^[0-9]+$ ]] && (( now_ms - last_ms < debounce_ms )); then
+    exit 0
+  fi
+fi
+printf '%s' "$now_ms" >"$stamp_file"
+
+text="$("$stt_client_bin" "$@")"
+text="${text//$'\r'/}"
+text="${text//$'\n'/ }"
+
+if [[ -z "${text//[[:space:]]/}" ]]; then
+  exit 0
+fi
+
+xdotool type --clearmodifiers --delay "$type_delay_ms" -- "$text"
+
+if [[ "${STT_PTT_SEND_ENTER:-0}" == "1" ]]; then
+  xdotool key --clearmodifiers Return
+fi

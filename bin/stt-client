@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+stt_env_file="${STT_ENV_FILE:-$HOME/.venvs/faster-whisper/env.sh}"
+stt_client_py="${STT_CLIENT_PY:-$HOME/.local/lib/stt/stt_client.py}"
+
+if [[ ! -f "$stt_env_file" ]]; then
+  printf '[stt-client] missing env file: %s\n' "$stt_env_file" >&2
+  exit 2
+fi
+
+if [[ ! -f "$stt_client_py" ]]; then
+  printf '[stt-client] missing client script: %s\n' "$stt_client_py" >&2
+  exit 3
+fi
+
+source "$stt_env_file"
+exec python "$stt_client_py" "$@"
