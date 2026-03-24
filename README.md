@@ -1,6 +1,6 @@
 # STT Quickstart and Operating Guide
 
-This project provides local, GPU-accelerated speech-to-text for Ubuntu GNOME workflows, with push-to-talk behavior that can type into any focused X11 text field (terminal, browser, editor, chat apps, and more).
+This project provides local, GPU-accelerated speech-to-text for Linux X11 workflows, with push-to-talk behavior that can type into any focused X11 text field (terminal, browser, editor, chat apps, and more).
 
 For deep implementation history and agent handoff context, read `AGENTS.md`.
 For command-only reference, use `CHEATSHEET.md`.
@@ -13,14 +13,14 @@ For repeatable verification and smoke checks, use `TESTING.md`.
 - Audible start chime before each listen cycle so nearby people can tell dictation is active.
 - Optional mute of all audio output during listening to reduce feedback contamination.
 - Push-to-talk helper that types transcript text directly into the focused X11 window.
-- GNOME global hotkey integration for practical day-to-day use.
-- Works beyond GNOME Terminal: browser text areas, web chat inputs, IDE/editor fields, and other focused text boxes.
+- Desktop global hotkey integration for practical day-to-day use.
+- Works in browser text areas, web chat inputs, IDE/editor fields, terminal prompts, and other focused text boxes.
 
 ## Current Runtime State
 
-- Desktop/session: GNOME on X11.
+- Desktop/session requirement: X11 (for `xdotool` typing injection).
 - Backend model defaults: English-focused `large-v3` with stronger decoding search.
-- Keybinding: `Ctrl+grave` (`<Primary>grave`) runs `/home/user/.local/bin/stt-ptt`.
+- Keybinding example: `Ctrl+grave` runs `$HOME/.local/bin/stt-ptt`.
 
 ## High-Level Architecture
 
@@ -208,11 +208,11 @@ stt-client --verbose
 
 ## Where PTT Works
 
-Because `stt-ptt` uses `xdotool type`, it targets the currently focused X11 window, not just GNOME Terminal.
+Because `stt-ptt` uses `xdotool type`, it targets the currently focused X11 window.
 
 Common targets:
 
-- Terminal prompts (GNOME Terminal, other X11 terminals)
+- Terminal prompts (X11 terminals)
 - Browser text fields (search boxes, chat inputs, form text areas)
 - Editor and IDE inputs
 - Desktop chat apps with standard text input fields
@@ -229,7 +229,7 @@ Practical note:
 Chime backend selection:
 
 - `auto` (default): prefer direct PipeWire playback (`pw-play`), then `paplay`, then synthesized tone, then `canberra`.
-- `pipewire`: direct `pw-play` chime path (best fit for modern GNOME).
+- `pipewire`: direct `pw-play` chime path (best fit for modern Linux desktops).
 - `paplay`: plays a bell audio file directly.
 - `canberra`: uses desktop event/file playback.
 - `sounddevice`: generated high-frequency chirp.
@@ -301,7 +301,7 @@ Two lock layers prevent race conditions and repeated delayed output:
 
 ### Daemon configuration file
 
-Edit `/home/user/.config/stt-daemon.env`.
+Edit `$HOME/.config/stt-daemon.env`.
 
 Current defaults:
 
@@ -432,10 +432,10 @@ stt-client --no-start-chime
 stt-client --chime-volume 0.10 --chime-duration-ms 80
 ```
 
-### Force direct PipeWire playback (recommended on modern GNOME)
+### Force direct PipeWire playback (recommended on modern Linux desktops)
 
 ```bash
-stt-client --chime-backend pipewire --chime-file /home/user/.local/share/stt/chime_hi.wav
+stt-client --chime-backend pipewire --chime-file "$HOME/.local/share/stt/chime_hi.wav"
 ```
 
 If your notification stream is suppressed, use a role with normal playback priority:
@@ -456,31 +456,30 @@ stt-client --chime-backend paplay --chime-file /usr/share/sounds/freedesktop/ste
 stt-client --chime-backend paplay --chime-sink @DEFAULT_SINK@
 ```
 
-### Force GNOME desktop event backend
+### Force desktop event backend
 
 ```bash
 stt-client --chime-backend canberra --chime-event-id bell
 ```
 
-## GNOME Keybinding Notes
+## Global Hotkey Notes
 
 Current binding points to:
 
-- `/home/user/.local/bin/stt-ptt`
+- `$HOME/.local/bin/stt-ptt`
 
-This PTT path is global for X11 and is not limited to GNOME Terminal; it will type into whichever X11 window currently has keyboard focus.
+Use your desktop's global hotkey settings to run `$HOME/.local/bin/stt-ptt`.
+PTT will type into whichever X11 window currently has keyboard focus.
 
-Check full binding object:
+Recommended hotkey behavior:
 
 ```bash
-gsettings get org.gnome.settings-daemon.plugins.media-keys custom-keybindings
-gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/stt-ptt/ command
-gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/stt-ptt/ binding
+# command: $HOME/.local/bin/stt-ptt
+# binding: Ctrl+grave (or any preferred global hotkey)
 ```
 
 Conflict note:
 
-- No known GNOME global conflict was detected for `<Primary>grave` at setup time.
 - Some applications may still have app-local meaning for `Ctrl+grave`.
 
 ## Troubleshooting
@@ -490,7 +489,7 @@ No transcript appears:
 - Check daemon: `systemctl --user status stt-daemon`
 - Check logs: `journalctl --user -u stt-daemon -n 80 --no-pager`
 - Test client directly: `stt-client --verbose`
-- Verify socket exists: `/home/user/.cache/stt/faster-whisper.sock`
+- Verify socket exists: `$HOME/.cache/stt/faster-whisper.sock`
 - Expected secure permissions: socket dir `drwx------`, socket file `srw-------`
 
 Remote mode issues (`STT_SERVER` set):
@@ -502,7 +501,7 @@ Remote mode issues (`STT_SERVER` set):
 
 PTT key does nothing:
 
-- Confirm command path in GNOME binding is `/home/user/.local/bin/stt-ptt`.
+- Confirm hotkey command path is `$HOME/.local/bin/stt-ptt`.
 - Confirm `xdotool` exists: `xdotool -v`.
 - Confirm session is X11: `echo "$XDG_SESSION_TYPE"`.
 
@@ -513,7 +512,7 @@ No start chime heard:
 - Test directly: `stt-client --verbose --max-seconds 0.5`.
 - Force PipeWire path: `stt-client --verbose --chime-backend pipewire --max-seconds 0.5`.
 - Force bell-file path: `stt-client --verbose --chime-backend paplay --max-seconds 0.5`.
-- Force GNOME sound path: `stt-client --verbose --chime-backend canberra --max-seconds 0.5`.
+- Force desktop event sound path: `stt-client --verbose --chime-backend canberra --max-seconds 0.5`.
 - Check routing: `pactl info | rg "Default Sink"` and set `--chime-sink` / `STT_CHIME_SINK` if needed.
 - For PipeWire routing issues: set `STT_CHIME_TARGET` to a concrete node name from `wpctl status`.
 - If chime is clipped by immediate mute, set a tiny holdoff: `--chime-cooldown-ms 30` to `60`.
@@ -553,12 +552,12 @@ for s in $(pactl list short sinks | awk '{print $1}'); do pactl set-sink-mute "$
 
 When modifying behavior:
 
-1. Edit active runtime files under `/home/user/.local/...`.
+1. Edit active runtime files under `$HOME/.local/...`.
 2. Validate Python syntax:
 
 ```bash
-source /home/user/.venvs/faster-whisper/env.sh
-python -m py_compile /home/user/.local/lib/stt/stt_client.py /home/user/.local/lib/stt/stt_daemon.py
+source "$HOME/.venvs/faster-whisper/env.sh"
+python -m py_compile "$HOME/.local/lib/stt/stt_client.py" "$HOME/.local/lib/stt/stt_daemon.py"
 ```
 
 3. Restart and verify daemon:
@@ -574,4 +573,4 @@ systemctl --user status stt-daemon
 stt-client --verbose --max-seconds 1.5
 ```
 
-5. Sync mirror files into `/home/user/Documents/stt/*` when needed.
+5. Sync mirror files into your repository workspace when needed.

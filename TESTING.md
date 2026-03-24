@@ -15,12 +15,18 @@ What unit tests currently cover:
 
 - `STT_SERVER` endpoint parsing and validation rules.
 - Client request option payload construction.
+- Client CLI main-path behavior and exit codes for common failure modes.
 - Client Unix/TCP request error handling (timeouts, empty/invalid/oversize responses).
+- Client output mute/restore logic and chime backend fallback order.
+- Client non-blocking lock behavior.
 - Unix-socket request validation and local `audio_path` handling.
 - TCP transport auth checks (missing token, bad token).
 - TCP request/audio payload size limits.
 - TCP behavior for disallowed `audio_path` and valid `audio_b64` flow.
+- TCP repeated-request soak behavior and temp-file cleanup.
 - Daemon socket path safety behavior for stale/missing/non-socket paths.
+- Daemon startup guards (`no transport`, `invalid port`, `missing token`) and dual-transport shutdown path.
+- `stt-ptt` script debounce and overlap lock behavior.
 
 ## 2) Local Runtime Smoke Test (Unix Socket)
 

@@ -54,7 +54,7 @@ python -m py_compile lib/stt_client.py lib/stt_daemon.py
 
 ## Tailscale Remote Mode
 
-Server node (`/home/user/.config/stt-daemon.env`):
+Server node (`$HOME/.config/stt-daemon.env`):
 
 ```dotenv
 STT_TCP_LISTEN=<tailscale-ip>
@@ -95,23 +95,23 @@ stt-client --verbose --no-start-chime
 
 ## Push To Talk
 
-Current GNOME hotkey:
+Current hotkey example:
 
 - `Ctrl+grave` (`<Primary>grave`)
 
-Works in any focused X11 text field, including browser inputs (not just GNOME Terminal).
+Works in any focused X11 text field, including browser inputs.
 PTT now plays a short start chime before muting/listening.
 Default `auto` backend prefers direct PipeWire playback (`pw-play`).
 
 Binding points to:
 
-- `/home/user/.local/bin/stt-ptt`
+- `$HOME/.local/bin/stt-ptt`
 
 Check keybinding:
 
 ```bash
-gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/stt-ptt/ binding
-gsettings get org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/stt-ptt/ command
+# command: $HOME/.local/bin/stt-ptt
+# binding: Ctrl+grave (or any preferred global hotkey)
 ```
 
 Run PTT script manually:
@@ -132,10 +132,10 @@ Disable chime for one run:
 stt-client --no-start-chime
 ```
 
-Force direct PipeWire playback (recommended on modern GNOME):
+Force direct PipeWire playback (recommended on modern Linux desktops):
 
 ```bash
-stt-client --chime-backend pipewire --chime-file /home/user/.local/share/stt/chime_hi.wav
+stt-client --chime-backend pipewire --chime-file "$HOME/.local/share/stt/chime_hi.wav"
 ```
 
 Use a non-notification role for audibility:
@@ -162,7 +162,7 @@ Target a specific sink for chime playback:
 stt-client --chime-backend paplay --chime-sink @DEFAULT_SINK@
 ```
 
-Force GNOME desktop chime backend:
+Force desktop event chime backend:
 
 ```bash
 stt-client --chime-backend canberra --chime-event-id bell
@@ -223,7 +223,7 @@ echo "$XDG_SESSION_TYPE"
 Verify socket exists:
 
 ```bash
-ls -l /home/user/.cache/stt/faster-whisper.sock
+ls -l "$HOME/.cache/stt/faster-whisper.sock"
 ```
 
 Verify Tailnet TCP listener on server:
@@ -260,19 +260,19 @@ pactl get-sink-mute <sink-id>
 
 Daemon config:
 
-- `/home/user/.config/stt-daemon.env`
+- `$HOME/.config/stt-daemon.env`
 
 Service unit:
 
-- `/home/user/.config/systemd/user/stt-daemon.service`
+- `$HOME/.config/systemd/user/stt-daemon.service`
 
 Runtime scripts:
 
-- `/home/user/.local/bin/stt-daemon`
-- `/home/user/.local/bin/stt-client`
-- `/home/user/.local/bin/stt-ptt`
-- `/home/user/.local/lib/stt/stt_daemon.py`
-- `/home/user/.local/lib/stt/stt_client.py`
+- `$HOME/.local/bin/stt-daemon`
+- `$HOME/.local/bin/stt-client`
+- `$HOME/.local/bin/stt-ptt`
+- `$HOME/.local/lib/stt/stt_daemon.py`
+- `$HOME/.local/lib/stt/stt_client.py`
 
 Wrapper override env vars:
 

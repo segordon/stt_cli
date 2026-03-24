@@ -1,0 +1,125 @@
+import os
+import subprocess
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+PTT_SCRIPT = REPO_ROOT / "bin" / "stt-ptt"
+
+
+def _write_executable(path, content):
+    path.write_text(content, encoding="utf-8")
+    path.chmod(0o755)
+
+
+class PTTScriptBehaviorTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir_obj = tempfile.TemporaryDirectory()
+        self.temp_dir = Path(self.temp_dir_obj.name)
+        self.fake_bin = self.temp_dir / "fake-bin"
+        self.fake_bin.mkdir(parents=True, exist_ok=True)
+
+        self.xdotool_log = self.temp_dir / "xdotool.log"
+        self.client_log = self.temp_dir / "client.log"
+
+        _write_executable(
+            self.fake_bin / "xdotool",
+            """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >>"${XDOTOOL_LOG:?}"
+""",
+        )
+
+        _write_executable(
+            self.fake_bin / "stt-client",
+            """#!/usr/bin/env bash
+set -euo pipefail
+printf 'call\n' >>"${STT_CLIENT_CALL_LOG:?}"
+if [[ -n "${STT_CLIENT_SLEEP_MS:-}" ]]; then
+  s=$((STT_CLIENT_SLEEP_MS / 1000))
+  ms=$((STT_CLIENT_SLEEP_MS % 1000))
+  sleep "${s}.$(printf '%03d' "$ms")"
+fi
+printf '%s' "${STT_CLIENT_TEXT:-hello world}"
+""",
+        )
+
+        self.base_env = os.environ.copy()
+        self.base_env.update(
+            {
+                "XDG_SESSION_TYPE": "x11",
+                "XDG_RUNTIME_DIR": str(self.temp_dir / "runtime"),
+                "STT_CLIENT_BIN": str(self.fake_bin / "stt-client"),
+                "STT_PTT_CHIME_ENABLED": "0",
+                "STT_PTT_CHIME_TARGET": "dummy-target",
+                "STT_PTT_SEND_ENTER": "0",
+                "XDOTOOL_LOG": str(self.xdotool_log),
+                "STT_CLIENT_CALL_LOG": str(self.client_log),
+                "PATH": f"{self.fake_bin}:{self.base_env.get('PATH', '')}",
+            }
+        )
+
+    def tearDown(self):
+        self.temp_dir_obj.cleanup()
+
+    def _run_ptt(self, env_overrides=None):
+        env = dict(self.base_env)
+        if env_overrides:
+            env.update(env_overrides)
+        return subprocess.run(
+            ["bash", str(PTT_SCRIPT)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+
+    def test_debounce_suppresses_second_invocation(self):
+        first = self._run_ptt({"STT_PTT_DEBOUNCE_MS": "60000"})
+        second = self._run_ptt({"STT_PTT_DEBOUNCE_MS": "60000"})
+
+        self.assertEqual(first.returncode, 0)
+        self.assertEqual(second.returncode, 0)
+
+        xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
+        client_lines = self.client_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(xdotool_lines), 1)
+        self.assertEqual(len(client_lines), 1)
+
+    def test_lock_prevents_overlapping_runs(self):
+        env = dict(self.base_env)
+        env.update({"STT_PTT_DEBOUNCE_MS": "0", "STT_CLIENT_SLEEP_MS": "400"})
+
+        first = subprocess.Popen(
+            ["bash", str(PTT_SCRIPT)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.05)
+        second = subprocess.run(
+            ["bash", str(PTT_SCRIPT)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+        first_stdout, first_stderr = first.communicate(timeout=5.0)
+
+        self.assertEqual(first.returncode, 0, msg=f"stdout={first_stdout} stderr={first_stderr}")
+        self.assertEqual(second.returncode, 0, msg=f"stdout={second.stdout} stderr={second.stderr}")
+
+        xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
+        client_lines = self.client_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(xdotool_lines), 1)
+        self.assertEqual(len(client_lines), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

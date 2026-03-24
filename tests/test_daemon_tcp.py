@@ -200,6 +200,22 @@ class DaemonTCPTransportTests(unittest.TestCase):
             self.assertEqual(options["beam_size"], 3)
             self.assertEqual(options["best_of"], 5)
 
+    def test_soak_repeated_requests_leave_no_temp_files(self):
+        request_count = 25
+        with RunningTCPServer() as server:
+            for idx in range(request_count):
+                response = server.request(
+                    {
+                        "audio_b64": base64.b64encode(f"payload-{idx}".encode("utf-8")).decode("ascii"),
+                        "auth_token": "secret-token",
+                    }
+                )
+                self.assertTrue(response["ok"])
+
+            self.assertEqual(len(server.model.calls), request_count)
+            for audio_path, _options in server.model.calls:
+                self.assertFalse(Path(audio_path).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

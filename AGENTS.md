@@ -15,7 +15,7 @@ Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows
 
 ## Current Environment
 
-- OS/session: Ubuntu derivative, GNOME, X11 session.
+- OS/session: Ubuntu derivative, X11 session.
 - GPU: NVIDIA RTX 5070 Ti with working NVIDIA driver/CUDA runtime.
 - Python: 3.12.
 - STT backend: `faster-whisper` with CUDA via `ctranslate2`.
@@ -24,14 +24,14 @@ Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows
 
 ### 1) GPU backend install and validation
 
-- Created venv at `/home/user/.venvs/faster-whisper`.
+- Created venv at `$HOME/.venvs/faster-whisper`.
 - Installed core Python packages:
   - `faster-whisper`
   - `nvidia-cublas-cu12`
   - `nvidia-cudnn-cu12`
   - `sounddevice`
   - `soundfile`
-- Added env helper: `/home/user/.venvs/faster-whisper/env.sh`
+- Added env helper: `$HOME/.venvs/faster-whisper/env.sh`
   - exports `VIRTUAL_ENV`
   - prepends `PATH`
   - sets `LD_LIBRARY_PATH` for cuBLAS/cuDNN wheel libs
@@ -41,9 +41,9 @@ Provide fast, local, GPU-accelerated speech-to-text (STT) for terminal workflows
 
 ### 2) Warm daemon architecture
 
-- Added daemon script: `/home/user/.local/lib/stt/stt_daemon.py`
+- Added daemon script: `$HOME/.local/lib/stt/stt_daemon.py`
 - Daemon runs a persistent Whisper model and serves requests over Unix socket and optional TCP.
-- Socket default: `/home/user/.cache/stt/faster-whisper.sock`
+- Socket default: `$HOME/.cache/stt/faster-whisper.sock`
 - TCP defaults (when enabled): `<tailscale-ip>:8765`
 - Protocol: single-line JSON request/response over AF_UNIX or TCP stream.
 
@@ -83,7 +83,7 @@ Response contains:
 
 ### 3) Client capture tool
 
-- Added client script: `/home/user/.local/lib/stt/stt_client.py`
+- Added client script: `$HOME/.local/lib/stt/stt_client.py`
 - Captures mic audio with `sounddevice`, VAD-like stop logic based on RMS threshold + trailing silence.
 - Writes temp WAV, sends to local daemon (Unix) or remote daemon (TCP), prints transcript to stdout.
 
@@ -126,9 +126,9 @@ Two separate protections were added to fix real issues seen in testing.
    - Default debounce: `0ms` via `STT_PTT_DEBOUNCE_MS` (lock handles overlap protection)
    - Prevents key-repeat spawning multiple jobs and delayed/batched output typing.
 
-### 6) PTT integration for GNOME Terminal
+### 6) PTT integration for X11 text fields
 
-- Installed `xdotool` and created launcher: `/home/user/.local/bin/stt-ptt`
+- Installed `xdotool` and created launcher: `$HOME/.local/bin/stt-ptt`
 - Flow:
   1. run `stt-client`
   2. sanitize transcript (CR/LF)
@@ -144,9 +144,9 @@ PTT script safety checks:
 
 ### 7) Systemd user service
 
-- Service file: `/home/user/.config/systemd/user/stt-daemon.service`
-- Env file: `/home/user/.config/stt-daemon.env`
-- Wrapper: `/home/user/.local/bin/stt-daemon`
+- Service file: `$HOME/.config/systemd/user/stt-daemon.service`
+- Env file: `$HOME/.config/stt-daemon.env`
+- Wrapper: `$HOME/.local/bin/stt-daemon`
 - Service is enabled and started (`systemctl --user`).
 
 ### 8) Additional noise suppression tuning
@@ -231,44 +231,44 @@ Initial baseline worked but had low accuracy. Current defaults were tuned for En
 - `STT_DEVICE=cuda`
 - `STT_COMPUTE_TYPE=float16`
 
-Configured at: `/home/user/.config/stt-daemon.env`
+Configured at: `$HOME/.config/stt-daemon.env`
 
-Mirror copy: `/home/user/Documents/stt/config/stt-daemon.env`
+Mirror copy: `<repo-root>/config/stt-daemon.env`
 
 ## Keybinding State
 
-GNOME custom shortcut configured:
+Global shortcut configured:
 
 - Name: `STT Push To Talk`
-- Command: `/home/user/.local/bin/stt-ptt`
+- Command: `$HOME/.local/bin/stt-ptt`
 - Binding: `<Primary>grave` (Ctrl+`)
 
 Conflict note:
 
-- No direct GNOME global conflict detected in common keybinding schemas.
-- Some applications may use Ctrl+` for app-local actions; GNOME global binding can override those when active.
+- No direct desktop-global conflict detected in common keybinding schemas.
+- Some applications may use Ctrl+` for app-local actions; the global binding can override those when active.
 
 ## Files and Responsibilities
 
 ### Runtime source of truth (active)
 
-- `/home/user/.local/lib/stt/stt_daemon.py`
-- `/home/user/.local/lib/stt/stt_client.py`
-- `/home/user/.local/bin/stt-daemon`
-- `/home/user/.local/bin/stt-client`
-- `/home/user/.local/bin/stt-ptt`
-- `/home/user/.config/stt-daemon.env`
-- `/home/user/.config/systemd/user/stt-daemon.service`
-- `/home/user/.venvs/faster-whisper/env.sh`
+- `$HOME/.local/lib/stt/stt_daemon.py`
+- `$HOME/.local/lib/stt/stt_client.py`
+- `$HOME/.local/bin/stt-daemon`
+- `$HOME/.local/bin/stt-client`
+- `$HOME/.local/bin/stt-ptt`
+- `$HOME/.config/stt-daemon.env`
+- `$HOME/.config/systemd/user/stt-daemon.service`
+- `$HOME/.venvs/faster-whisper/env.sh`
 
 ### Development mirror (copied snapshot)
 
-- `/home/user/Documents/stt/lib/*`
-- `/home/user/Documents/stt/bin/*`
-- `/home/user/Documents/stt/config/*`
-- `/home/user/Documents/stt/venv/env.sh`
+- `<repo-root>/lib/*`
+- `<repo-root>/bin/*`
+- `<repo-root>/config/*`
+- `<repo-root>/venv/env.sh`
 
-Important: wrappers inside mirror currently execute scripts in `/home/user/.local/*` and use venv in `/home/user/.venvs/faster-whisper`.
+Important: wrappers inside mirror currently execute scripts in `$HOME/.local/*` and use venv in `$HOME/.venvs/faster-whisper`.
 
 ## Operational Commands
 
@@ -352,12 +352,12 @@ Additional Python dependency installed:
 
 ## Suggested Agent Workflow for Future Changes
 
-1. Edit active files in `/home/user/.local/*` first.
+1. Edit active files in `$HOME/.local/*` first.
 2. Validate syntax after Python edits:
 
 ```bash
-source /home/user/.venvs/faster-whisper/env.sh
-python -m py_compile /home/user/.local/lib/stt/stt_client.py /home/user/.local/lib/stt/stt_daemon.py
+source "$HOME/.venvs/faster-whisper/env.sh"
+python -m py_compile "$HOME/.local/lib/stt/stt_client.py" "$HOME/.local/lib/stt/stt_daemon.py"
 ```
 
 3. If daemon behavior changed, restart service and verify logs:
@@ -375,12 +375,12 @@ stt-client --max-seconds 1 --verbose
 pactl list short sinks
 ```
 
-5. Mirror updates to `/home/user/Documents/stt/*` when requested.
+5. Mirror updates to `<repo-root>/*` when requested.
 
 ## Current Status Snapshot
 
 - STT daemon: running under user systemd.
 - Backend: GPU (`cuda`) and English-tuned model settings.
-- PTT: active through GNOME global shortcut Ctrl+`.
+- PTT: active through a global shortcut (example: Ctrl+`).
 - Mute-while-listening: implemented and restored safely.
 - Concurrency protections: enabled in both client and PTT script.
