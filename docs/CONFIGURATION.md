@@ -83,7 +83,7 @@ Notes:
 
 - `KEYSTREL_PTT_DOUBLE_PRESS_CANCEL` defaults to `1`.
 - `KEYSTREL_PTT_DEBOUNCE_MS` defaults to `180`.
-- `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS` defaults to `350`.
+- `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS` defaults to `150`.
 
 Client/server transport and capture:
 
