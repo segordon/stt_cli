@@ -9,7 +9,7 @@ cancel_file="$state_dir/keystrel-ptt.cancel"
 
 debounce_ms="${KEYSTREL_PTT_DEBOUNCE_MS:-${STT_PTT_DEBOUNCE_MS:-180}}"
 ptt_double_press_cancel="${KEYSTREL_PTT_DOUBLE_PRESS_CANCEL:-${STT_PTT_DOUBLE_PRESS_CANCEL:-1}}"
-ptt_cancel_debounce_ms="${KEYSTREL_PTT_CANCEL_DEBOUNCE_MS:-${STT_PTT_CANCEL_DEBOUNCE_MS:-350}}"
+ptt_cancel_debounce_ms="${KEYSTREL_PTT_CANCEL_DEBOUNCE_MS:-${STT_PTT_CANCEL_DEBOUNCE_MS:-150}}"
 keystrel_client_bin="${KEYSTREL_CLIENT_BIN:-${STT_CLIENT_BIN:-$HOME/.local/bin/keystrel-client}}"
 type_delay_ms="${KEYSTREL_TYPE_DELAY_MS:-${STT_TYPE_DELAY_MS:-1}}"
 
@@ -38,7 +38,7 @@ if ! [[ "$ptt_double_press_cancel" =~ ^(0|1)$ ]]; then
 fi
 
 if ! [[ "$ptt_cancel_debounce_ms" =~ ^[0-9]+$ ]]; then
-  ptt_cancel_debounce_ms=350
+  ptt_cancel_debounce_ms=150
 fi
 
 if ! [[ "$type_delay_ms" =~ ^[0-9]+$ ]]; then
