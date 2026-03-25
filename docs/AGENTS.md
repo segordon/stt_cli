@@ -128,8 +128,10 @@ Two separate protections were added to fix real issues seen in testing.
 2. PTT lock + debounce (`keystrel-ptt`)
    - Lock file: `${XDG_RUNTIME_DIR:-$HOME/.cache/keystrel}/keystrel-ptt.lock`
    - Debounce stamp: `${XDG_RUNTIME_DIR:-$HOME/.cache/keystrel}/keystrel-ptt.last`
+   - Repeat guard state: `${XDG_RUNTIME_DIR:-$HOME/.cache/keystrel}/keystrel-ptt.repeat`
    - Default debounce: `180ms` via `KEYSTREL_PTT_DEBOUNCE_MS`
    - Default cancel debounce: `150ms` via `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS`
+   - Repeat-delay/interval defaults come from GNOME keyboard settings when available, with fallbacks `500/30` via `KEYSTREL_PTT_REPEAT_DELAY_MS` and `KEYSTREL_PTT_REPEAT_INTERVAL_MS`
    - Prevents key-repeat spawning multiple jobs and delayed/batched output typing.
 
 ### 6) PTT integration for X11 text fields
@@ -298,6 +300,7 @@ keystrel-client --verbose
 
 ```bash
 KEYSTREL_PTT_DEBOUNCE_MS=180 KEYSTREL_PTT_CANCEL_DEBOUNCE_MS=150 keystrel-ptt
+KEYSTREL_PTT_REPEAT_DELAY_MS=500 KEYSTREL_PTT_REPEAT_INTERVAL_MS=30 keystrel-ptt
 KEYSTREL_TYPE_DELAY_MS=0 keystrel-ptt
 KEYSTREL_PTT_SEND_ENTER=1 keystrel-ptt
 ```

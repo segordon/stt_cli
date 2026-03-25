@@ -67,6 +67,8 @@ PTT behavior:
 - `KEYSTREL_PTT_DEBOUNCE_MS`
 - `KEYSTREL_PTT_DOUBLE_PRESS_CANCEL`
 - `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS`
+- `KEYSTREL_PTT_REPEAT_DELAY_MS`
+- `KEYSTREL_PTT_REPEAT_INTERVAL_MS`
 - `KEYSTREL_TYPE_DELAY_MS`
 - `KEYSTREL_PTT_SEND_ENTER`
 - `KEYSTREL_CLIENT_BIN`
@@ -84,6 +86,8 @@ Notes:
 - `KEYSTREL_PTT_DOUBLE_PRESS_CANCEL` defaults to `1`.
 - `KEYSTREL_PTT_DEBOUNCE_MS` defaults to `180`.
 - `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS` defaults to `150`.
+- `KEYSTREL_PTT_REPEAT_DELAY_MS` defaults to GNOME keyboard repeat delay when available, else `500`.
+- `KEYSTREL_PTT_REPEAT_INTERVAL_MS` defaults to GNOME keyboard repeat interval when available, else `30`.
 
 Client/server transport and capture:
 

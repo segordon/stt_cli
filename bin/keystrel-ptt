@@ -31,6 +31,8 @@ ptt_mute_start_delay_ms="${KEYSTREL_PTT_MUTE_START_DELAY_MS:-${STT_PTT_MUTE_STAR
 ptt_debug_log="${KEYSTREL_PTT_DEBUG_LOG:-${STT_PTT_DEBUG_LOG:-}}"
 ptt_repeat_delay_ms="${KEYSTREL_PTT_REPEAT_DELAY_MS:-${STT_PTT_REPEAT_DELAY_MS:-}}"
 ptt_repeat_interval_ms="${KEYSTREL_PTT_REPEAT_INTERVAL_MS:-${STT_PTT_REPEAT_INTERVAL_MS:-}}"
+ptt_repeat_window_ms=""
+ptt_repeat_chain_ms=""
 
 log_debug() {
   [[ -n "$ptt_debug_log" ]] || return 0
@@ -103,6 +105,19 @@ normalize_settings() {
   fi
   if (( ptt_repeat_interval_ms <= 0 )); then
     ptt_repeat_interval_ms=30
+  fi
+
+  ptt_repeat_window_ms=$((ptt_repeat_interval_ms / 2))
+  if (( ptt_repeat_window_ms < 12 )); then
+    ptt_repeat_window_ms=12
+  fi
+  if (( ptt_repeat_window_ms > 30 )); then
+    ptt_repeat_window_ms=30
+  fi
+
+  ptt_repeat_chain_ms=$((ptt_repeat_interval_ms + ptt_repeat_window_ms))
+  if (( ptt_repeat_chain_ms < 25 )); then
+    ptt_repeat_chain_ms=25
   fi
 }
 
@@ -258,15 +273,12 @@ is_probable_key_repeat_press() {
     return 1
   fi
 
-  repeat_window_ms=$((ptt_repeat_interval_ms * 2))
-  if (( repeat_window_ms < 40 )); then
-    repeat_window_ms=40
-  fi
+  repeat_window_ms="$ptt_repeat_window_ms"
 
   if [[ -f "$repeat_file" ]]; then
     last_repeat_ms="$(<"$repeat_file")"
   fi
-  if [[ "$last_repeat_ms" =~ ^[0-9]+$ ]] && (( now_ms - last_repeat_ms <= repeat_window_ms )); then
+  if [[ "$last_repeat_ms" =~ ^[0-9]+$ ]] && (( now_ms - last_repeat_ms <= ptt_repeat_chain_ms )); then
     printf '%s' "$now_ms" >"$repeat_file"
     return 0
   fi
@@ -302,7 +314,7 @@ handle_running_capture_press() {
   fi
 
   if is_probable_key_repeat_press "$now_ms" "$running_ms"; then
-    log_debug "cancel ignored probable key-repeat elapsed_ms=$((now_ms - running_ms)) repeat_delay_ms=${ptt_repeat_delay_ms} repeat_interval_ms=${ptt_repeat_interval_ms}"
+    log_debug "cancel ignored probable key-repeat elapsed_ms=$((now_ms - running_ms)) repeat_delay_ms=${ptt_repeat_delay_ms} repeat_interval_ms=${ptt_repeat_interval_ms} repeat_window_ms=${ptt_repeat_window_ms}"
     exit 0
   fi
 

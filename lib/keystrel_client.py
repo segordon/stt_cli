@@ -858,6 +858,48 @@ def _update_capture_state(
     return started_voice, speech_streak, last_voice_at
 
 
+def _log_capture_config(args, vad):
+    if not args.verbose:
+        return
+
+    print(
+        "[keystrel-client] recording "
+        f"max={args.max_seconds}s min={args.min_seconds}s silence={args.silence_seconds}s "
+        f"threshold={args.threshold} webrtcvad={'on' if vad is not None else 'off'}",
+        file=sys.stderr,
+    )
+
+
+def _call_capture_tick(on_tick, elapsed):
+    if on_tick is None:
+        return
+
+    try:
+        on_tick(elapsed)
+    except CaptureCancelled:
+        raise
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _compute_capture_queue_timeout(max_seconds, elapsed, poll_timeout_s):
+    if elapsed >= max_seconds:
+        return None
+
+    remaining_s = max_seconds - elapsed
+    if remaining_s <= 0:
+        return None
+
+    return max(0.001, min(poll_timeout_s, remaining_s))
+
+
+def _read_capture_chunk(audio_queue, queue_timeout_s):
+    try:
+        return audio_queue.get(timeout=queue_timeout_s)
+    except queue.Empty:
+        return None
+
+
 def record_until_silence(args, on_tick=None):
     blocksize = max(1, int(args.sample_rate * args.block_seconds))
     poll_timeout_s = min(0.05, max(0.01, float(args.block_seconds)))
@@ -878,14 +920,7 @@ def record_until_silence(args, on_tick=None):
         audio_queue.put(indata.copy())
 
     stream_kwargs = _build_stream_kwargs(args, blocksize, callback)
-
-    if args.verbose:
-        print(
-            "[keystrel-client] recording "
-            f"max={args.max_seconds}s min={args.min_seconds}s silence={args.silence_seconds}s "
-            f"threshold={args.threshold} webrtcvad={'on' if vad is not None else 'off'}",
-            file=sys.stderr,
-        )
+    _log_capture_config(args, vad)
 
     with sd.InputStream(**stream_kwargs):
         while True:
@@ -894,24 +929,14 @@ def record_until_silence(args, on_tick=None):
 
             now = time.monotonic()
             elapsed = now - started_at
-            if on_tick is not None:
-                try:
-                    on_tick(elapsed)
-                except CaptureCancelled:
-                    raise
-                except Exception:  # noqa: BLE001
-                    pass
-            if elapsed >= args.max_seconds:
+            _call_capture_tick(on_tick, elapsed)
+
+            queue_timeout_s = _compute_capture_queue_timeout(args.max_seconds, elapsed, poll_timeout_s)
+            if queue_timeout_s is None:
                 break
 
-            remaining_s = args.max_seconds - elapsed
-            if remaining_s <= 0:
-                break
-            queue_timeout_s = max(0.001, min(poll_timeout_s, remaining_s))
-
-            try:
-                chunk = audio_queue.get(timeout=queue_timeout_s)
-            except queue.Empty:
+            chunk = _read_capture_chunk(audio_queue, queue_timeout_s)
+            if chunk is None:
                 continue
 
             is_voice, noise_floor = _detect_voice_activity(

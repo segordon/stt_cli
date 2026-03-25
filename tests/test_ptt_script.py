@@ -240,8 +240,8 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
             {
                 "KEYSTREL_PTT_DEBOUNCE_MS": "0",
                 "KEYSTREL_PTT_CANCEL_DEBOUNCE_MS": "80",
-                "KEYSTREL_PTT_REPEAT_DELAY_MS": "120",
-                "KEYSTREL_PTT_REPEAT_INTERVAL_MS": "30",
+                "KEYSTREL_PTT_REPEAT_DELAY_MS": "200",
+                "KEYSTREL_PTT_REPEAT_INTERVAL_MS": "40",
                 "KEYSTREL_CLIENT_CANCEL_WATCH_MS": "1200",
                 "KEYSTREL_CLIENT_TEXT": "should not type",
             }
@@ -254,7 +254,7 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
             stderr=subprocess.PIPE,
             text=True,
         )
-        time.sleep(0.14)
+        time.sleep(0.20)
         repeat_like = subprocess.run(
             ["bash", str(PTT_SCRIPT)],
             env=env,
@@ -285,6 +285,47 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
             0,
             msg=f"stdout={manual_press.stdout} stderr={manual_press.stderr}",
         )
+
+        client_lines = self.client_log.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(client_lines), 1)
+        if self.xdotool_log.exists():
+            xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
+            self.assertEqual(len(xdotool_lines), 0)
+        self.assertFalse(self._cancel_flag_path().exists())
+
+    def test_manual_second_press_outside_repeat_window_still_cancels(self):
+        env = dict(self.base_env)
+        env.update(
+            {
+                "KEYSTREL_PTT_DEBOUNCE_MS": "0",
+                "KEYSTREL_PTT_CANCEL_DEBOUNCE_MS": "80",
+                "KEYSTREL_PTT_REPEAT_DELAY_MS": "200",
+                "KEYSTREL_PTT_REPEAT_INTERVAL_MS": "40",
+                "KEYSTREL_CLIENT_CANCEL_WATCH_MS": "1200",
+                "KEYSTREL_CLIENT_TEXT": "should not type",
+            }
+        )
+
+        first = subprocess.Popen(
+            ["bash", str(PTT_SCRIPT)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.24)
+        second = subprocess.run(
+            ["bash", str(PTT_SCRIPT)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+        first_stdout, first_stderr = first.communicate(timeout=5.0)
+
+        self.assertEqual(first.returncode, 0, msg=f"stdout={first_stdout} stderr={first_stderr}")
+        self.assertEqual(second.returncode, 0, msg=f"stdout={second.stdout} stderr={second.stderr}")
 
         client_lines = self.client_log.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(client_lines), 1)

@@ -203,6 +203,45 @@ class KeystrelHandler(socketserver.StreamRequestHandler):
 
         return options
 
+    def _parse_request_payload(self, line):
+        try:
+            request = json.loads(line.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            self.send_json({"ok": False, "error": f"invalid JSON: {exc}"})
+            return None
+
+        if not isinstance(request, dict):
+            self.send_json({"ok": False, "error": "request must be a JSON object"})
+            return None
+
+        return request
+
+    def _transcribe_request(self, server, audio_path, options):
+        started_at = time.perf_counter()
+        try:
+            segments, info = server.model.transcribe(str(audio_path), **options)
+            text = "".join(segment.text for segment in segments).strip()
+        except Exception as exc:  # noqa: BLE001
+            self.send_json({"ok": False, "error": f"transcription failed: {exc}"})
+            return None
+
+        elapsed_s = time.perf_counter() - started_at
+        return {
+            "ok": True,
+            "text": text,
+            "language": info.language,
+            "language_probability": info.language_probability,
+            "elapsed_s": round(elapsed_s, 3),
+        }
+
+    def _cleanup_temp_audio(self, temp_audio_path):
+        if temp_audio_path is None:
+            return
+        try:
+            temp_audio_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def handle(self):
         server = cast(KeystrelUnixServer | KeystrelTCPServer, self.server)
 
@@ -210,14 +249,8 @@ class KeystrelHandler(socketserver.StreamRequestHandler):
         if line is None:
             return
 
-        try:
-            request = json.loads(line.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            self.send_json({"ok": False, "error": f"invalid JSON: {exc}"})
-            return
-
-        if not isinstance(request, dict):
-            self.send_json({"ok": False, "error": "request must be a JSON object"})
+        request = self._parse_request_payload(line)
+        if request is None:
             return
 
         if not self._check_auth(server, request):
@@ -227,36 +260,18 @@ class KeystrelHandler(socketserver.StreamRequestHandler):
         if audio_path is None:
             return
 
-        options = self._build_options(server, request)
-        if options is None:
-            if temp_audio_path is not None:
-                temp_audio_path.unlink(missing_ok=True)
-            return
-
-        started_at = time.perf_counter()
         try:
-            segments, info = server.model.transcribe(str(audio_path), **options)
-            text = "".join(segment.text for segment in segments).strip()
-        except Exception as exc:  # noqa: BLE001
-            self.send_json({"ok": False, "error": f"transcription failed: {exc}"})
-            return
-        finally:
-            if temp_audio_path is not None:
-                try:
-                    temp_audio_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+            options = self._build_options(server, request)
+            if options is None:
+                return
 
-        elapsed_s = time.perf_counter() - started_at
-        self.send_json(
-            {
-                "ok": True,
-                "text": text,
-                "language": info.language,
-                "language_probability": info.language_probability,
-                "elapsed_s": round(elapsed_s, 3),
-            }
-        )
+            response = self._transcribe_request(server, audio_path, options)
+            if response is None:
+                return
+
+            self.send_json(response)
+        finally:
+            self._cleanup_temp_audio(temp_audio_path)
 
 
 def _add_transport_args(parser):

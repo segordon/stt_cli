@@ -138,6 +138,12 @@ Tune repeat/cancel debounce behavior:
 KEYSTREL_PTT_DEBOUNCE_MS=180 KEYSTREL_PTT_CANCEL_DEBOUNCE_MS=150 keystrel-ptt
 ```
 
+Tune key-repeat guard timing (useful if held-key repeat or fast second-press cancel feels off):
+
+```bash
+KEYSTREL_PTT_REPEAT_DELAY_MS=500 KEYSTREL_PTT_REPEAT_INTERVAL_MS=30 keystrel-ptt
+```
+
 Disable chime for one run:
 
 ```bash
