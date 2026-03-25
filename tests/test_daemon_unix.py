@@ -6,6 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tests._module_loader import load_daemon_module
 
@@ -26,11 +27,11 @@ class FakeModel:
 
 
 class RunningUnixServer:
-    def __init__(self, max_request_bytes=4096, max_audio_bytes=1024):
+    def __init__(self, max_request_bytes=4096, max_audio_bytes=1024, model=None):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
         self.temp_dir = Path(self.temp_dir_obj.name)
         self.socket_path = self.temp_dir / "keystrel.sock"
-        self.model = FakeModel()
+        self.model = model if model is not None else FakeModel()
         self.server = keystrel_daemon.KeystrelUnixServer(
             self.socket_path,
             self.model,
@@ -166,6 +167,39 @@ class DaemonUnixTransportTests(unittest.TestCase):
             response = server.request({"audio_b64": base64.b64encode(b"abcd").decode("ascii")})
             self.assertFalse(response["ok"])
             self.assertIn("audio payload exceeds size limit", response["error"])
+
+    def test_rejects_empty_audio_b64_payload(self):
+        with RunningUnixServer() as server:
+            with mock.patch.object(keystrel_daemon.base64, "b64decode", return_value=b""):
+                response = server.request({"audio_b64": "AAAA"})
+
+        self.assertFalse(response["ok"])
+        self.assertIn("audio_b64 payload is empty", response["error"])
+
+    def test_transcription_failure_returns_error_and_cleans_temp_audio(self):
+        class _FailingModel:
+            def __init__(self):
+                self.paths = []
+
+            def transcribe(self, audio_path, **options):  # noqa: ARG002
+                self.paths.append(audio_path)
+                raise RuntimeError("transcribe boom")
+
+        model = _FailingModel()
+        with RunningUnixServer(model=model) as server:
+            response = server.request({"audio_b64": base64.b64encode(b"abc").decode("ascii")})
+
+        self.assertFalse(response["ok"])
+        self.assertIn("transcription failed", response["error"])
+        self.assertEqual(len(model.paths), 1)
+        self.assertFalse(Path(model.paths[0]).exists())
+
+    def test_temp_cleanup_ignores_unlink_oserror(self):
+        with RunningUnixServer() as server:
+            with mock.patch.object(keystrel_daemon.Path, "unlink", side_effect=OSError("deny")):
+                response = server.request({"audio_b64": base64.b64encode(b"abc").decode("ascii")})
+
+        self.assertTrue(response["ok"])
 
 
 if __name__ == "__main__":

@@ -128,7 +128,8 @@ Two separate protections were added to fix real issues seen in testing.
 2. PTT lock + debounce (`keystrel-ptt`)
    - Lock file: `${XDG_RUNTIME_DIR:-$HOME/.cache/keystrel}/keystrel-ptt.lock`
    - Debounce stamp: `${XDG_RUNTIME_DIR:-$HOME/.cache/keystrel}/keystrel-ptt.last`
-   - Default debounce: `0ms` via `KEYSTREL_PTT_DEBOUNCE_MS` (lock handles overlap protection)
+   - Default debounce: `180ms` via `KEYSTREL_PTT_DEBOUNCE_MS`
+   - Default cancel debounce: `150ms` via `KEYSTREL_PTT_CANCEL_DEBOUNCE_MS`
    - Prevents key-repeat spawning multiple jobs and delayed/batched output typing.
 
 ### 6) PTT integration for X11 text fields
@@ -296,7 +297,7 @@ keystrel-client --verbose
 ### PTT behavior tuning
 
 ```bash
-KEYSTREL_PTT_DEBOUNCE_MS=0 keystrel-ptt
+KEYSTREL_PTT_DEBOUNCE_MS=180 KEYSTREL_PTT_CANCEL_DEBOUNCE_MS=150 keystrel-ptt
 KEYSTREL_TYPE_DELAY_MS=0 keystrel-ptt
 KEYSTREL_PTT_SEND_ENTER=1 keystrel-ptt
 ```

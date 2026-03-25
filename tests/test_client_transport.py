@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests._module_loader import load_client_module
 
@@ -151,6 +152,11 @@ class ClientTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "remote server connection failed"):
             keystrel_client.send_tcp_request(host, port, {"x": 1}, timeout_s=0.2)
 
+    def test_send_tcp_request_connect_timeout(self):
+        with mock.patch.object(keystrel_client.socket, "create_connection", side_effect=socket.timeout("slow")):
+            with self.assertRaisesRegex(TimeoutError, "remote server connect timed out"):
+                keystrel_client.send_tcp_request("127.0.0.1", 8765, {"x": 1}, timeout_s=0.2)
+
     def test_send_unix_request_success(self):
         with RunningUnixResponder(lambda conn, req: conn.sendall(b'{"ok":true,"text":"unix"}\n')) as server:
             response = keystrel_client.send_unix_request(server.socket_path, {"hello": "unix"}, timeout_s=1.0)
@@ -172,6 +178,11 @@ class ClientTransportTests(unittest.TestCase):
         with RunningUnixResponder(_slow) as server:
             with self.assertRaisesRegex(TimeoutError, "daemon request timed out"):
                 keystrel_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=0.05)
+
+    def test_send_unix_request_invalid_json_response(self):
+        with RunningUnixResponder(lambda conn, req: conn.sendall(b"not-json\n")) as server:
+            with self.assertRaises(json.JSONDecodeError):
+                keystrel_client.send_unix_request(server.socket_path, {"x": 1}, timeout_s=1.0)
 
 
 if __name__ == "__main__":

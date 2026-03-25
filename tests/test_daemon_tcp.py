@@ -5,6 +5,7 @@ import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tests._module_loader import load_daemon_module
 
@@ -25,8 +26,8 @@ class FakeModel:
 
 
 class RunningTCPServer:
-    def __init__(self, max_request_bytes=4096, max_audio_bytes=1024, token="secret-token"):
-        self.model = FakeModel()
+    def __init__(self, max_request_bytes=4096, max_audio_bytes=1024, token="secret-token", model=None):
+        self.model = model if model is not None else FakeModel()
         self.server = keystrel_daemon.KeystrelTCPServer(
             "127.0.0.1",
             0,
@@ -144,6 +145,19 @@ class DaemonTCPTransportTests(unittest.TestCase):
             self.assertFalse(response["ok"])
             self.assertIn("invalid audio_b64 payload", response["error"])
 
+    def test_rejects_empty_audio_b64_payload(self):
+        with RunningTCPServer() as server:
+            with mock.patch.object(keystrel_daemon.base64, "b64decode", return_value=b""):
+                response = server.request(
+                    {
+                        "audio_b64": "AAAA",
+                        "auth_token": "secret-token",
+                    }
+                )
+
+        self.assertFalse(response["ok"])
+        self.assertIn("audio_b64 payload is empty", response["error"])
+
     def test_rejects_invalid_vad_filter_override(self):
         with RunningTCPServer() as server:
             response = server.request(
@@ -182,6 +196,7 @@ class DaemonTCPTransportTests(unittest.TestCase):
                     "audio_b64": base64.b64encode(b"tiny-wav-placeholder").decode("ascii"),
                     "auth_token": "secret-token",
                     "language": "en",
+                    "task": "transcribe",
                     "vad_filter": False,
                     "beam_size": 3,
                     "best_of": 5,
@@ -196,9 +211,33 @@ class DaemonTCPTransportTests(unittest.TestCase):
             audio_path, options = server.model.calls[0]
             self.assertFalse(Path(audio_path).exists())
             self.assertEqual(options["language"], "en")
+            self.assertEqual(options["task"], "transcribe")
             self.assertEqual(options["vad_filter"], False)
             self.assertEqual(options["beam_size"], 3)
             self.assertEqual(options["best_of"], 5)
+
+    def test_transcription_failure_returns_error_and_cleans_temp_audio(self):
+        class _FailingModel:
+            def __init__(self):
+                self.paths = []
+
+            def transcribe(self, audio_path, **options):  # noqa: ARG002
+                self.paths.append(audio_path)
+                raise RuntimeError("transcribe boom")
+
+        model = _FailingModel()
+        with RunningTCPServer(model=model) as server:
+            response = server.request(
+                {
+                    "audio_b64": base64.b64encode(b"abc").decode("ascii"),
+                    "auth_token": "secret-token",
+                }
+            )
+
+        self.assertFalse(response["ok"])
+        self.assertIn("transcription failed", response["error"])
+        self.assertEqual(len(model.paths), 1)
+        self.assertFalse(Path(model.paths[0]).exists())
 
     def test_soak_repeated_requests_leave_no_temp_files(self):
         request_count = 25

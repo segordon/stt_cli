@@ -1,5 +1,10 @@
+import io
+import os
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from tests._module_loader import load_client_module
 
@@ -45,6 +50,75 @@ class BuildTranscriptionOptionsTests(unittest.TestCase):
     def test_omits_empty_optional_fields(self):
         args = SimpleNamespace(language="   ", vad_filter=None, beam_size=None, best_of=None)
         self.assertEqual(keystrel_client.build_transcription_options(args), {})
+
+
+class ParseArgsTests(unittest.TestCase):
+    def test_cancel_file_env_is_normalized_and_expanded(self):
+        with (
+            mock.patch.dict(os.environ, {"KEYSTREL_CANCEL_FILE": "~/keystrel-cancel.flag"}, clear=False),
+            mock.patch.object(sys, "argv", ["keystrel-client"]),
+        ):
+            args = keystrel_client.parse_args()
+
+        self.assertEqual(args.cancel_file, str(Path("~/keystrel-cancel.flag").expanduser()))
+
+    def test_parse_args_clamps_min_seconds_to_max_seconds(self):
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            mock.patch.object(sys, "argv", ["keystrel-client", "--max-seconds", "1", "--min-seconds", "2"]),
+        ):
+            args = keystrel_client.parse_args()
+
+        self.assertEqual(args.max_seconds, 1.0)
+        self.assertEqual(args.min_seconds, 1.0)
+
+
+class ClientParseHelpersTests(unittest.TestCase):
+    def test_parse_bool_accepts_aliases_and_rejects_unknown(self):
+        self.assertTrue(keystrel_client.parse_bool(" yes "))
+        self.assertFalse(keystrel_client.parse_bool("OFF"))
+        self.assertTrue(keystrel_client.parse_bool(True))
+
+        with self.assertRaisesRegex(ValueError, "invalid boolean value"):
+            keystrel_client.parse_bool("maybe")
+
+    def test_parse_env_helpers_fallback_on_invalid_values(self):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {
+                    "KEYSTREL_BAD_INT": "nope",
+                    "KEYSTREL_BAD_FLOAT": "nan-nope",
+                    "KEYSTREL_BAD_BOOL": "not-bool",
+                    "KEYSTREL_BAD_CHOICE": "invalid",
+                },
+                clear=True,
+            ),
+            mock.patch("sys.stderr", new_callable=io.StringIO),
+        ):
+            self.assertEqual(keystrel_client.parse_env_int("KEYSTREL_BAD_INT", 7), 7)
+            self.assertEqual(keystrel_client.parse_env_float("KEYSTREL_BAD_FLOAT", 1.5), 1.5)
+            self.assertEqual(keystrel_client.parse_env_bool("KEYSTREL_BAD_BOOL", True), True)
+            self.assertEqual(
+                keystrel_client.parse_env_choice(
+                    "KEYSTREL_BAD_CHOICE",
+                    "pipewire",
+                    {"auto", "pipewire", "paplay"},
+                ),
+                "pipewire",
+            )
+
+    def test_parse_env_choice_accepts_valid_value(self):
+        with mock.patch.dict(os.environ, {"KEYSTREL_CHOICE": "PAPLAY"}, clear=True):
+            result = keystrel_client.parse_env_choice("KEYSTREL_CHOICE", "auto", {"auto", "paplay"})
+        self.assertEqual(result, "paplay")
+
+    def test_normalize_audio_device_variants(self):
+        self.assertIsNone(keystrel_client.normalize_audio_device(None))
+        self.assertIsNone(keystrel_client.normalize_audio_device("  "))
+        self.assertEqual(keystrel_client.normalize_audio_device("42"), 42)
+        self.assertEqual(keystrel_client.normalize_audio_device("UM10"), "UM10")
+        self.assertEqual(keystrel_client.normalize_audio_device(7), 7)
 
 
 if __name__ == "__main__":

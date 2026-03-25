@@ -1,3 +1,4 @@
+import io
 import signal
 import tempfile
 import threading
@@ -129,6 +130,24 @@ class DaemonMainGuardTests(unittest.TestCase):
                 keystrel_daemon.main()
         self.assertEqual(ctx.exception.code, 2)
 
+    def test_socket_preparation_runtime_error_exits_with_code_1(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            socket_path = Path(tmp_dir) / "keystrel.sock"
+            args = _base_args(socket=str(socket_path), tcp_listen="", server_token="")
+            with (
+                mock.patch.object(keystrel_daemon, "parse_args", return_value=args),
+                mock.patch.object(keystrel_daemon, "WhisperModel", _FakeWhisperModel),
+                mock.patch.object(
+                    keystrel_daemon,
+                    "remove_existing_socket",
+                    side_effect=RuntimeError("refusing to remove non-socket path"),
+                ),
+            ):
+                with self.assertRaises(SystemExit) as ctx:
+                    keystrel_daemon.main()
+
+        self.assertEqual(ctx.exception.code, 1)
+
 
 class DaemonMainDualTransportTests(unittest.TestCase):
     def test_dual_transport_startup_and_shutdown_path(self):
@@ -182,6 +201,124 @@ class DaemonMainDualTransportTests(unittest.TestCase):
         self.assertTrue(unix_server.server_close_called)
         self.assertTrue(tcp_server.shutdown_called)
         self.assertTrue(tcp_server.server_close_called)
+
+    def test_language_default_option_is_included_when_set(self):
+        _FakeUnixServer.instances = []
+        _FakeTCPServer.instances = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            socket_path = Path(tmp_dir) / "keystrel.sock"
+            args = _base_args(
+                socket=str(socket_path),
+                tcp_listen="127.0.0.1",
+                server_token="token",
+                tcp_port=8765,
+                language="en",
+            )
+
+            registered_handlers = {}
+
+            def _fake_signal(sig, handler):
+                registered_handlers[sig] = handler
+                return handler
+
+            def _trigger_shutdown():
+                deadline = time.time() + 1.0
+                while signal.SIGTERM not in registered_handlers and time.time() < deadline:
+                    time.sleep(0.01)
+                handler = registered_handlers.get(signal.SIGTERM)
+                if handler is not None:
+                    handler(signal.SIGTERM, None)
+
+            trigger_thread = threading.Thread(target=_trigger_shutdown, daemon=True)
+            trigger_thread.start()
+
+            with (
+                mock.patch.object(keystrel_daemon, "parse_args", return_value=args),
+                mock.patch.object(keystrel_daemon, "WhisperModel", _FakeWhisperModel),
+                mock.patch.object(keystrel_daemon, "KeystrelUnixServer", _FakeUnixServer),
+                mock.patch.object(keystrel_daemon, "KeystrelTCPServer", _FakeTCPServer),
+                mock.patch.object(keystrel_daemon.signal, "signal", side_effect=_fake_signal),
+            ):
+                keystrel_daemon.main()
+
+            trigger_thread.join(timeout=1.0)
+
+        self.assertEqual(_FakeUnixServer.instances[0].default_options["language"], "en")
+
+
+class _FakeUnixServerCloseError(_FakeServer):
+    instances = []
+
+    def __init__(
+        self,
+        socket_path,
+        model,
+        default_options,
+        max_request_bytes,
+        max_audio_bytes,
+    ):
+        super().__init__()
+        self.transport = "unix"
+        self.socket_path = Path(socket_path)
+        self.socket_path.parent.mkdir(parents=True, exist_ok=True)
+        self.socket_path.write_text("not-a-socket", encoding="utf-8")
+        self.model = model
+        self.default_options = default_options
+        self.max_request_bytes = max_request_bytes
+        self.max_audio_bytes = max_audio_bytes
+        _FakeUnixServerCloseError.instances.append(self)
+
+    def server_close(self):
+        raise OSError("close failed")
+
+
+class DaemonMainCleanupTests(unittest.TestCase):
+    def test_cleanup_tolerates_server_close_error_and_non_socket_path(self):
+        _FakeUnixServerCloseError.instances = []
+        _FakeTCPServer.instances = []
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            socket_path = Path(tmp_dir) / "keystrel.sock"
+            args = _base_args(
+                socket=str(socket_path),
+                tcp_listen="127.0.0.1",
+                server_token="token",
+                tcp_port=8765,
+            )
+
+            registered_handlers = {}
+
+            def _fake_signal(sig, handler):
+                registered_handlers[sig] = handler
+                return handler
+
+            def _trigger_shutdown():
+                deadline = time.time() + 1.0
+                while signal.SIGTERM not in registered_handlers and time.time() < deadline:
+                    time.sleep(0.01)
+                handler = registered_handlers.get(signal.SIGTERM)
+                if handler is not None:
+                    handler(signal.SIGTERM, None)
+
+            trigger_thread = threading.Thread(target=_trigger_shutdown, daemon=True)
+            trigger_thread.start()
+
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(keystrel_daemon, "parse_args", return_value=args),
+                mock.patch.object(keystrel_daemon, "WhisperModel", _FakeWhisperModel),
+                mock.patch.object(keystrel_daemon, "KeystrelUnixServer", _FakeUnixServerCloseError),
+                mock.patch.object(keystrel_daemon, "KeystrelTCPServer", _FakeTCPServer),
+                mock.patch.object(keystrel_daemon.signal, "signal", side_effect=_fake_signal),
+                mock.patch("sys.stderr", new=stderr),
+            ):
+                keystrel_daemon.main()
+
+            trigger_thread.join(timeout=1.0)
+
+        output = stderr.getvalue()
+        self.assertIn("warning: leaving non-socket path untouched", output)
 
 
 if __name__ == "__main__":

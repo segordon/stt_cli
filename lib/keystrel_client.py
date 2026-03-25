@@ -4,7 +4,6 @@ import argparse
 import base64
 import fcntl
 import json
-import os
 import queue
 import shutil
 import socket
@@ -15,6 +14,14 @@ import time
 from urllib.parse import urlparse
 from collections import deque
 from pathlib import Path
+
+from keystrel_env import env_candidates as shared_env_candidates
+from keystrel_env import get_env as shared_get_env
+from keystrel_env import parse_bool as shared_parse_bool
+from keystrel_env import parse_env_bool as shared_parse_env_bool
+from keystrel_env import parse_env_choice as shared_parse_env_choice
+from keystrel_env import parse_env_float as shared_parse_env_float
+from keystrel_env import parse_env_int as shared_parse_env_int
 
 import numpy as np
 import sounddevice as sd  # type: ignore[import-not-found]
@@ -35,89 +42,34 @@ class CaptureCancelled(Exception):
 
 
 def parse_bool(value):
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().lower()
-    if text in {"1", "true", "yes", "on"}:
-        return True
-    if text in {"0", "false", "no", "off"}:
-        return False
-    raise ValueError(f"invalid boolean value: {value}")
+    return shared_parse_bool(value)
 
 
 def _env_candidates(name):
-    if name.startswith("KEYSTREL_"):
-        return (name, f"STT_{name.removeprefix('KEYSTREL_')}")
-    return (name,)
+    return shared_env_candidates(name)
 
 
 _LEGACY_ENV_WARNED = set()
 
 
 def get_env(name, default=None):
-    candidates = _env_candidates(name)
-    primary_name = candidates[0]
-
-    for candidate in candidates:
-        raw = os.environ.get(candidate)
-        if raw is not None and str(raw).strip():
-            if candidate != primary_name and candidate not in _LEGACY_ENV_WARNED:
-                print(
-                    f"[keystrel-client] {candidate} is deprecated; use {primary_name} instead",
-                    file=sys.stderr,
-                )
-                _LEGACY_ENV_WARNED.add(candidate)
-            return raw
-    return default
+    return shared_get_env(name, default, _LEGACY_ENV_WARNED, "keystrel-client")
 
 
 def parse_env_int(name, default):
-    raw = get_env(name)
-    if raw is None or not str(raw).strip():
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        print(f"[keystrel-client] invalid {name}={raw!r}, using default {default}", file=sys.stderr)
-        return default
+    return shared_parse_env_int(name, default, get_env, "keystrel-client")
 
 
 def parse_env_float(name, default):
-    raw = get_env(name)
-    if raw is None or not str(raw).strip():
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        print(f"[keystrel-client] invalid {name}={raw!r}, using default {default}", file=sys.stderr)
-        return default
+    return shared_parse_env_float(name, default, get_env, "keystrel-client")
 
 
 def parse_env_bool(name, default):
-    raw = get_env(name)
-    if raw is None or not str(raw).strip():
-        return default
-    try:
-        return parse_bool(raw)
-    except ValueError:
-        print(f"[keystrel-client] invalid {name}={raw!r}, using default {default}", file=sys.stderr)
-        return default
+    return shared_parse_env_bool(name, default, get_env, "keystrel-client")
 
 
 def parse_env_choice(name, default, choices):
-    raw = get_env(name)
-    if raw is None or not str(raw).strip():
-        return default
-
-    value = str(raw).strip().lower()
-    if value in choices:
-        return value
-
-    print(
-        f"[keystrel-client] invalid {name}={raw!r}, using default {default}",
-        file=sys.stderr,
-    )
-    return default
+    return shared_parse_env_choice(name, default, choices, get_env, "keystrel-client")
 
 
 def normalize_audio_device(value):
@@ -133,10 +85,7 @@ def normalize_audio_device(value):
     return value
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Record microphone audio and request transcription from keystrel-daemon"
-    )
+def _add_transport_args(parser):
     parser.add_argument(
         "--socket",
         default=get_env("KEYSTREL_SOCKET", "~/.cache/keystrel/faster-whisper.sock"),
@@ -158,6 +107,9 @@ def parse_args():
         default=parse_env_float("KEYSTREL_SERVER_TIMEOUT", 30.0),
         help="seconds before remote server connect/read timeout",
     )
+
+
+def _add_capture_args(parser):
     parser.add_argument(
         "--sample-rate",
         type=int,
@@ -205,6 +157,9 @@ def parse_args():
         default=get_env("KEYSTREL_INPUT_DEVICE"),
         help="optional input device name/id",
     )
+
+
+def _add_transcription_override_args(parser):
     parser.add_argument(
         "--language",
         default=get_env("KEYSTREL_LANGUAGE", ""),
@@ -228,6 +183,9 @@ def parse_args():
         default=None,
         help="override daemon best-of",
     )
+
+
+def _add_output_args(parser):
     parser.add_argument(
         "--json",
         action="store_true",
@@ -243,6 +201,9 @@ def parse_args():
         action="store_true",
         help="list audio devices and exit",
     )
+
+
+def _add_mute_and_cancel_args(parser):
     parser.add_argument(
         "--mute-output",
         action=argparse.BooleanOptionalAction,
@@ -266,6 +227,9 @@ def parse_args():
         default=get_env("KEYSTREL_CANCEL_FILE", ""),
         help="optional path used to cancel active capture",
     )
+
+
+def _add_vad_args(parser):
     parser.add_argument(
         "--webrtcvad",
         action=argparse.BooleanOptionalAction,
@@ -310,6 +274,9 @@ def parse_args():
         default=parse_env_float("KEYSTREL_NOISE_MULTIPLIER", 2.5),
         help="RMS fallback multiplier over measured noise floor",
     )
+
+
+def _add_timeout_and_chime_args(parser):
     parser.add_argument(
         "--socket-timeout",
         type=float,
@@ -382,7 +349,8 @@ def parse_args():
         help="wait after chime before muting/listening",
     )
 
-    args = parser.parse_args()
+
+def _normalize_args(args):
     args.sample_rate = max(1, args.sample_rate)
     args.max_seconds = max(0.1, args.max_seconds)
     args.min_seconds = max(0.0, args.min_seconds)
@@ -413,6 +381,22 @@ def parse_args():
     args.chime_role = args.chime_role.strip() or "Music"
     args.chime_event_id = args.chime_event_id.strip() or "bell"
     return args
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Record microphone audio and request transcription from keystrel-daemon"
+    )
+    _add_transport_args(parser)
+    _add_capture_args(parser)
+    _add_transcription_override_args(parser)
+    _add_output_args(parser)
+    _add_mute_and_cancel_args(parser)
+    _add_vad_args(parser)
+    _add_timeout_and_chime_args(parser)
+
+    args = parser.parse_args()
+    return _normalize_args(args)
 
 
 def parse_server_endpoint(server_url):
@@ -623,9 +607,8 @@ def confirm_output_mute_before_capture(args, sink_states):
 
 
 def acquire_client_lock(args):
-    lock_path = Path(
-        get_env("KEYSTREL_CLIENT_LOCK", "~/.cache/keystrel/keystrel-client.lock")
-    ).expanduser()
+    lock_value = get_env("KEYSTREL_CLIENT_LOCK", "~/.cache/keystrel/keystrel-client.lock")
+    lock_path = Path(lock_value or "~/.cache/keystrel/keystrel-client.lock").expanduser()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     lock_file = lock_path.open("w", encoding="utf-8")
     try:
@@ -671,10 +654,7 @@ def build_webrtc_vad(args):
         return None
 
 
-def auto_select_input_device(args):
-    if args.device is not None:
-        return args.device, False
-
+def _query_devices_with_default_input_index():
     try:
         devices = sd.query_devices()
         default_device = sd.default.device
@@ -683,53 +663,74 @@ def auto_select_input_device(args):
         except Exception:  # noqa: BLE001
             default_input_index = int(default_device)
     except Exception:  # noqa: BLE001
-        return None, False
+        return None, None
 
+    return devices, default_input_index
+
+
+def _default_input_looks_virtual(devices, default_input_index):
     if default_input_index < 0 or default_input_index >= len(devices):
-        return None, False
+        return False
 
     default_info = devices[default_input_index]
     default_name = str(default_info.get("name", "")).strip().lower()
     default_inputs = int(default_info.get("max_input_channels", 0) or 0)
 
-    default_looks_virtual = default_name in {"default", "pipewire"} or default_inputs >= 16
-    if not default_looks_virtual:
+    return default_name in {"default", "pipewire"} or default_inputs >= 16
+
+
+def _build_input_candidate(index, info, args):
+    name = str(info.get("name", "")).strip()
+    lowered = name.lower()
+    inputs = int(info.get("max_input_channels", 0) or 0)
+    outputs = int(info.get("max_output_channels", 0) or 0)
+
+    if inputs <= 0:
+        return None
+    if outputs != 0:
+        return None
+    if lowered in {"default", "pipewire"}:
+        return None
+    if "monitor" in lowered:
+        return None
+
+    try:
+        sd.check_input_settings(
+            device=index,
+            channels=args.channels,
+            samplerate=args.sample_rate,
+            dtype="float32",
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    score = 0
+    if "usb" in lowered:
+        score += 3
+    if "mic" in lowered or "microphone" in lowered:
+        score += 3
+    if "mono" in lowered:
+        score += 1
+
+    return score, -index, index, name
+
+
+def auto_select_input_device(args):
+    if args.device is not None:
+        return args.device, False
+
+    devices, default_input_index = _query_devices_with_default_input_index()
+    if devices is None or default_input_index is None:
+        return None, False
+
+    if not _default_input_looks_virtual(devices, default_input_index):
         return None, False
 
     candidates = []
     for index, info in enumerate(devices):
-        name = str(info.get("name", "")).strip()
-        lowered = name.lower()
-        inputs = int(info.get("max_input_channels", 0) or 0)
-        outputs = int(info.get("max_output_channels", 0) or 0)
-
-        if inputs <= 0:
-            continue
-        if outputs != 0:
-            continue
-        if lowered in {"default", "pipewire"}:
-            continue
-        if "monitor" in lowered:
-            continue
-
-        try:
-            sd.check_input_settings(
-                device=index,
-                channels=args.channels,
-                samplerate=args.sample_rate,
-                dtype="float32",
-            )
-        except Exception:  # noqa: BLE001
-            continue
-
-        score = 0
-        if "usb" in lowered:
-            score += 3
-        if "mic" in lowered or "microphone" in lowered:
-            score += 3
-        if "mono" in lowered:
-            score += 1
-        candidates.append((score, -index, index, name))
+        candidate = _build_input_candidate(index, info, args)
+        if candidate is not None:
+            candidates.append(candidate)
 
     if not candidates:
         return None, False
@@ -782,8 +783,84 @@ def speech_ratio_in_chunk(chunk, args, vad):
     return voiced_frames / total_frames
 
 
+def _detect_voice_activity(chunk, args, vad, started_voice, noise_floor):
+    rms = float(np.sqrt(np.mean(np.square(chunk))))
+    speech_ratio = speech_ratio_in_chunk(chunk, args, vad)
+    if speech_ratio is not None:
+        return speech_ratio >= args.speech_ratio, noise_floor
+
+    if not started_voice:
+        if noise_floor is None:
+            noise_floor = rms
+        else:
+            noise_floor = 0.9 * noise_floor + 0.1 * rms
+
+    dynamic_threshold = args.threshold
+    if noise_floor is not None:
+        dynamic_threshold = max(dynamic_threshold, noise_floor * args.noise_multiplier)
+    return rms >= dynamic_threshold, noise_floor
+
+
+def _should_stop_after_silence(args, started_voice, elapsed, last_voice_at, now):
+    return (
+        started_voice
+        and elapsed >= args.min_seconds
+        and last_voice_at is not None
+        and (now - last_voice_at) >= args.silence_seconds
+    )
+
+
+def _build_stream_kwargs(args, blocksize, callback):
+    stream_kwargs = {
+        "samplerate": args.sample_rate,
+        "channels": args.channels,
+        "dtype": "float32",
+        "blocksize": blocksize,
+        "callback": callback,
+    }
+    capture_device, _ = auto_select_input_device(args)
+    if capture_device is not None:
+        stream_kwargs["device"] = capture_device
+    return stream_kwargs
+
+
+def _update_capture_state(
+    chunk,
+    args,
+    now,
+    is_voice,
+    started_voice,
+    speech_streak,
+    pre_roll_chunks,
+    chunks,
+    last_voice_at,
+):
+    if is_voice:
+        speech_streak += 1
+    else:
+        speech_streak = 0
+
+    if not started_voice:
+        if pre_roll_chunks is not None:
+            pre_roll_chunks.append(chunk)
+        if speech_streak >= args.start_speech_chunks:
+            started_voice = True
+            last_voice_at = now
+            if pre_roll_chunks is not None:
+                chunks.extend(pre_roll_chunks)
+                pre_roll_chunks.clear()
+        return started_voice, speech_streak, last_voice_at
+
+    chunks.append(chunk)
+    if is_voice:
+        last_voice_at = now
+
+    return started_voice, speech_streak, last_voice_at
+
+
 def record_until_silence(args, on_tick=None):
     blocksize = max(1, int(args.sample_rate * args.block_seconds))
+    poll_timeout_s = min(0.05, max(0.01, float(args.block_seconds)))
     audio_queue = queue.Queue()
     chunks = []
     pre_roll_chunk_count = int(args.pre_roll_seconds / args.block_seconds)
@@ -800,16 +877,7 @@ def record_until_silence(args, on_tick=None):
             print(f"[keystrel-client] audio status: {status}", file=sys.stderr)
         audio_queue.put(indata.copy())
 
-    stream_kwargs = {
-        "samplerate": args.sample_rate,
-        "channels": args.channels,
-        "dtype": "float32",
-        "blocksize": blocksize,
-        "callback": callback,
-    }
-    capture_device, _ = auto_select_input_device(args)
-    if capture_device is not None:
-        stream_kwargs["device"] = capture_device
+    stream_kwargs = _build_stream_kwargs(args, blocksize, callback)
 
     if args.verbose:
         print(
@@ -836,52 +904,39 @@ def record_until_silence(args, on_tick=None):
             if elapsed >= args.max_seconds:
                 break
 
+            remaining_s = args.max_seconds - elapsed
+            if remaining_s <= 0:
+                break
+            queue_timeout_s = max(0.001, min(poll_timeout_s, remaining_s))
+
             try:
-                chunk = audio_queue.get(timeout=0.25)
+                chunk = audio_queue.get(timeout=queue_timeout_s)
             except queue.Empty:
                 continue
 
-            rms = float(np.sqrt(np.mean(np.square(chunk))))
-            speech_ratio = speech_ratio_in_chunk(chunk, args, vad)
-            if speech_ratio is not None:
-                is_voice = speech_ratio >= args.speech_ratio
-            else:
-                if not started_voice:
-                    if noise_floor is None:
-                        noise_floor = rms
-                    else:
-                        noise_floor = 0.9 * noise_floor + 0.1 * rms
-                dynamic_threshold = args.threshold
-                if noise_floor is not None:
-                    dynamic_threshold = max(dynamic_threshold, noise_floor * args.noise_multiplier)
-                is_voice = rms >= dynamic_threshold
-
-            if is_voice:
-                speech_streak += 1
-            else:
-                speech_streak = 0
+            is_voice, noise_floor = _detect_voice_activity(
+                chunk,
+                args,
+                vad,
+                started_voice,
+                noise_floor,
+            )
+            started_voice, speech_streak, last_voice_at = _update_capture_state(
+                chunk,
+                args,
+                now,
+                is_voice,
+                started_voice,
+                speech_streak,
+                pre_roll_chunks,
+                chunks,
+                last_voice_at,
+            )
 
             if not started_voice:
-                if pre_roll_chunks is not None:
-                    pre_roll_chunks.append(chunk)
-                if speech_streak >= args.start_speech_chunks:
-                    started_voice = True
-                    last_voice_at = now
-                    if pre_roll_chunks is not None:
-                        chunks.extend(pre_roll_chunks)
-                        pre_roll_chunks.clear()
                 continue
 
-            chunks.append(chunk)
-            if is_voice:
-                last_voice_at = now
-
-            if (
-                started_voice
-                and elapsed >= args.min_seconds
-                and last_voice_at is not None
-                and (now - last_voice_at) >= args.silence_seconds
-            ):
+            if _should_stop_after_silence(args, started_voice, elapsed, last_voice_at, now):
                 break
 
     if not chunks or not started_voice:
@@ -1150,6 +1205,127 @@ def send_tcp_request(host, port, payload, timeout_s, max_response_bytes=2 * 1024
         raise RuntimeError(f"invalid JSON response from remote server: {exc}") from exc
 
 
+def _resolve_transcription_target(args):
+    try:
+        remote_endpoint = parse_server_endpoint(args.server)
+    except ValueError as exc:
+        print(f"[keystrel-client] invalid remote server configuration: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    socket_path = None
+    if remote_endpoint is None:
+        socket_path = Path(args.socket).expanduser()
+        if not socket_path.exists():
+            print(
+                f"[keystrel-client] daemon socket not found: {socket_path}\n"
+                "[keystrel-client] start it with: systemctl --user start keystrel-daemon",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+    elif not args.server_token:
+        print(
+            "[keystrel-client] remote mode requires KEYSTREL_SERVER_TOKEN or --server-token",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    return remote_endpoint, socket_path
+
+
+def _capture_audio_with_output_control(args):
+    sink_states = {}
+    mute_applied = False
+
+    mute_start_delay_s = args.mute_start_delay_ms / 1000.0
+
+    def maybe_apply_mute(elapsed_s):
+        nonlocal sink_states, mute_applied
+        if cancel_requested(args):
+            raise CaptureCancelled()
+        if mute_applied or not args.mute_output:
+            return
+        if elapsed_s < mute_start_delay_s:
+            return
+        sink_states = mute_output_during_capture(args)
+        mute_applied = True
+
+    try:
+        play_start_chime(args)
+        if cancel_requested(args):
+            raise CaptureCancelled()
+        if args.mute_output and mute_start_delay_s <= 0:
+            sink_states = mute_output_during_capture(args)
+            mute_applied = True
+            confirm_output_mute_before_capture(args, sink_states)
+        return record_until_silence(args, on_tick=maybe_apply_mute)
+    except CaptureCancelled:
+        if args.verbose:
+            print("[keystrel-client] capture cancelled", file=sys.stderr)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        print(f"[keystrel-client] microphone capture failed: {exc}", file=sys.stderr)
+        sys.exit(3)
+    finally:
+        restore_output_mute(args, sink_states)
+
+
+def _should_skip_request(args, audio):
+    if cancel_requested(args):
+        if args.verbose:
+            print("[keystrel-client] request skipped due cancel", file=sys.stderr)
+        print("", end="")
+        return True
+
+    if audio is None or getattr(audio, "size", 0) == 0:
+        print("", end="")
+        return True
+
+    return False
+
+
+def _request_transcription(args, audio, remote_endpoint, socket_path):
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        wav_path = Path(tmp.name)
+
+    try:
+        sf.write(str(wav_path), audio, args.sample_rate)
+        payload = build_transcription_options(args)
+
+        if remote_endpoint is None:
+            payload["audio_path"] = str(wav_path)
+            return send_unix_request(socket_path, payload, args.socket_timeout)
+
+        host, port = remote_endpoint
+        payload["audio_b64"] = base64.b64encode(wav_path.read_bytes()).decode("ascii")
+        payload["auth_token"] = args.server_token
+        return send_tcp_request(host, port, payload, args.server_timeout)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[keystrel-client] request failed: {exc}", file=sys.stderr)
+        sys.exit(4)
+    finally:
+        try:
+            wav_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _print_response(args, response):
+    if not response.get("ok"):
+        print(f"[keystrel-client] daemon error: {response.get('error', 'unknown')}", file=sys.stderr)
+        sys.exit(5)
+
+    if args.verbose:
+        print(
+            f"[keystrel-client] elapsed={response.get('elapsed_s')}s language={response.get('language')}",
+            file=sys.stderr,
+        )
+
+    if args.json:
+        print(json.dumps(response, ensure_ascii=True))
+    else:
+        print(response.get("text", ""))
+
+
 def main():
     args = parse_args()
 
@@ -1162,112 +1338,12 @@ def main():
         return
 
     try:
-        try:
-            remote_endpoint = parse_server_endpoint(args.server)
-        except ValueError as exc:
-            print(f"[keystrel-client] invalid remote server configuration: {exc}", file=sys.stderr)
-            sys.exit(2)
-
-        socket_path = None
-        if remote_endpoint is None:
-            socket_path = Path(args.socket).expanduser()
-            if not socket_path.exists():
-                print(
-                    f"[keystrel-client] daemon socket not found: {socket_path}\n"
-                    "[keystrel-client] start it with: systemctl --user start keystrel-daemon",
-                    file=sys.stderr,
-                )
-                sys.exit(2)
-        elif not args.server_token:
-            print(
-                "[keystrel-client] remote mode requires KEYSTREL_SERVER_TOKEN or --server-token",
-                file=sys.stderr,
-            )
-            sys.exit(2)
-
-        sink_states = {}
-        mute_applied = False
-
-        mute_start_delay_s = args.mute_start_delay_ms / 1000.0
-
-        def maybe_apply_mute(elapsed_s):
-            nonlocal sink_states, mute_applied
-            if cancel_requested(args):
-                raise CaptureCancelled()
-            if mute_applied or not args.mute_output:
-                return
-            if elapsed_s < mute_start_delay_s:
-                return
-            sink_states = mute_output_during_capture(args)
-            mute_applied = True
-
-        try:
-            play_start_chime(args)
-            if cancel_requested(args):
-                raise CaptureCancelled()
-            if args.mute_output and mute_start_delay_s <= 0:
-                sink_states = mute_output_during_capture(args)
-                mute_applied = True
-                confirm_output_mute_before_capture(args, sink_states)
-            audio = record_until_silence(args, on_tick=maybe_apply_mute)
-        except CaptureCancelled:
-            if args.verbose:
-                print("[keystrel-client] capture cancelled", file=sys.stderr)
-            audio = None
-        except Exception as exc:  # noqa: BLE001
-            print(f"[keystrel-client] microphone capture failed: {exc}", file=sys.stderr)
-            sys.exit(3)
-        finally:
-            restore_output_mute(args, sink_states)
-
-        if cancel_requested(args):
-            if args.verbose:
-                print("[keystrel-client] request skipped due cancel", file=sys.stderr)
-            print("", end="")
+        remote_endpoint, socket_path = _resolve_transcription_target(args)
+        audio = _capture_audio_with_output_control(args)
+        if _should_skip_request(args, audio):
             return
-
-        if audio is None or getattr(audio, "size", 0) == 0:
-            print("", end="")
-            return
-
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            wav_path = Path(tmp.name)
-
-        try:
-            sf.write(str(wav_path), audio, args.sample_rate)
-            payload = build_transcription_options(args)
-
-            if remote_endpoint is None:
-                payload["audio_path"] = str(wav_path)
-                response = send_unix_request(socket_path, payload, args.socket_timeout)
-            else:
-                host, port = remote_endpoint
-                payload["audio_b64"] = base64.b64encode(wav_path.read_bytes()).decode("ascii")
-                payload["auth_token"] = args.server_token
-                response = send_tcp_request(host, port, payload, args.server_timeout)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[keystrel-client] request failed: {exc}", file=sys.stderr)
-            sys.exit(4)
-        finally:
-            try:
-                wav_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
-        if not response.get("ok"):
-            print(f"[keystrel-client] daemon error: {response.get('error', 'unknown')}", file=sys.stderr)
-            sys.exit(5)
-
-        if args.verbose:
-            print(
-                f"[keystrel-client] elapsed={response.get('elapsed_s')}s language={response.get('language')}",
-                file=sys.stderr,
-            )
-
-        if args.json:
-            print(json.dumps(response, ensure_ascii=True))
-        else:
-            print(response.get("text", ""))
+        response = _request_transcription(args, audio, remote_endpoint, socket_path)
+        _print_response(args, response)
     finally:
         lock_file.close()
 

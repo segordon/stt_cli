@@ -15,6 +15,16 @@ def _write_executable(path, content):
     path.chmod(0o755)
 
 
+def _write_forwarding_mkdir(path):
+    _write_executable(
+        path,
+        """#!/bin/bash
+set -euo pipefail
+/usr/bin/mkdir "$@"
+""",
+    )
+
+
 class PTTScriptBehaviorTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir_obj = tempfile.TemporaryDirectory()
@@ -92,13 +102,16 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
         if env_overrides:
             env.update(env_overrides)
         return subprocess.run(
-            ["bash", str(PTT_SCRIPT)],
+            ["/bin/bash", str(PTT_SCRIPT)],
             env=env,
             capture_output=True,
             text=True,
             timeout=5.0,
             check=False,
         )
+
+    def _cancel_flag_path(self):
+        return Path(self.base_env["XDG_RUNTIME_DIR"]) / "keystrel-ptt.cancel"
 
     def test_debounce_suppresses_second_invocation(self):
         first = self._run_ptt({"KEYSTREL_PTT_DEBOUNCE_MS": "60000"})
@@ -145,6 +158,12 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
         self.assertEqual(result.returncode, 0, msg=f"stdout={result.stdout} stderr={result.stderr}")
         env_line = self.client_env_log.read_text(encoding="utf-8").strip()
         self.assertIn("mute_start_delay=0", env_line)
+
+    def test_cancel_flag_removed_after_normal_run(self):
+        result = self._run_ptt({"KEYSTREL_CLIENT_TEXT": "hello"})
+
+        self.assertEqual(result.returncode, 0, msg=f"stdout={result.stdout} stderr={result.stderr}")
+        self.assertFalse(self._cancel_flag_path().exists())
 
     def test_lock_prevents_overlapping_runs(self):
         env = dict(self.base_env)
@@ -213,6 +232,7 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
         if self.xdotool_log.exists():
             xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(xdotool_lines), 0)
+        self.assertFalse(self._cancel_flag_path().exists())
 
     def test_second_press_ignored_when_cancel_disabled(self):
         env = dict(self.base_env)
@@ -363,6 +383,60 @@ printf '%s' "${KEYSTREL_CLIENT_TEXT:-hello world}"
         xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
         self.assertEqual(len(client_lines), 1)
         self.assertEqual(len(xdotool_lines), 1)
+
+    def test_requires_x11_session(self):
+        result = self._run_ptt({"XDG_SESSION_TYPE": "wayland"})
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("requires an X11 session", result.stderr)
+
+    def test_reports_missing_client_binary(self):
+        missing_client = self.temp_dir / "missing-client"
+        result = self._run_ptt({"KEYSTREL_CLIENT_BIN": str(missing_client)})
+        self.assertEqual(result.returncode, 3)
+        self.assertIn("missing executable keystrel-client", result.stderr)
+
+    def test_reports_missing_xdotool(self):
+        (self.fake_bin / "xdotool").unlink(missing_ok=True)
+        _write_forwarding_mkdir(self.fake_bin / "mkdir")
+        _write_executable(
+            self.fake_bin / "flock",
+            """#!/bin/bash
+set -euo pipefail
+exit 0
+""",
+        )
+        result = self._run_ptt({"PATH": str(self.fake_bin)})
+        self.assertEqual(result.returncode, 4)
+        self.assertIn("missing xdotool", result.stderr)
+
+    def test_reports_missing_flock(self):
+        env = dict(self.base_env)
+        env.update(
+            {
+                "PATH": str(self.fake_bin),
+                "XDG_SESSION_TYPE": "x11",
+            }
+        )
+        _write_forwarding_mkdir(self.fake_bin / "mkdir")
+        result = subprocess.run(
+            ["/bin/bash", str(PTT_SCRIPT)],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 5)
+        self.assertIn("missing flock", result.stderr)
+
+    def test_send_enter_types_return_key(self):
+        result = self._run_ptt({"KEYSTREL_PTT_SEND_ENTER": "1", "KEYSTREL_CLIENT_TEXT": "typed"})
+        self.assertEqual(result.returncode, 0, msg=f"stdout={result.stdout} stderr={result.stderr}")
+
+        xdotool_lines = self.xdotool_log.read_text(encoding="utf-8").splitlines()
+        self.assertGreaterEqual(len(xdotool_lines), 2)
+        self.assertTrue(any(line.startswith("type --clearmodifiers") for line in xdotool_lines))
+        self.assertTrue(any(line.startswith("key --clearmodifiers Return") for line in xdotool_lines))
 
 
 if __name__ == "__main__":

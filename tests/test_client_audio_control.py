@@ -71,6 +71,205 @@ class _NoopInputStream:
         return False
 
 
+class _TimeoutCapturingEmptyQueue:
+    def __init__(self, timeouts):
+        self._timeouts = timeouts
+
+    def get(self, timeout=None):
+        self._timeouts.append(timeout)
+        raise keystrel_client.queue.Empty
+
+    def put(self, item):  # noqa: ARG002
+        return None
+
+
+class ClientParseAndPactlTests(unittest.TestCase):
+    def test_list_output_sinks_parses_tab_and_space_formats(self):
+        fake_result = SimpleNamespace(
+            returncode=0,
+            stdout="1\talsa_output.a\n2 alsa_output.b\n\n",
+            stderr="",
+        )
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=fake_result):
+            sinks = keystrel_client.list_output_sinks()
+
+        self.assertEqual(sinks, ["1", "2"])
+
+    def test_list_output_sinks_raises_on_pactl_failure(self):
+        fake_result = SimpleNamespace(returncode=1, stdout="", stderr="pactl failed")
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=fake_result):
+            with self.assertRaisesRegex(RuntimeError, "pactl failed"):
+                keystrel_client.list_output_sinks()
+
+    def test_get_sink_mute_state_handles_yes_no_and_errors(self):
+        yes_result = SimpleNamespace(returncode=0, stdout="Mute: yes\n", stderr="")
+        no_result = SimpleNamespace(returncode=0, stdout="Mute: no\n", stderr="")
+        weird_result = SimpleNamespace(returncode=0, stdout="Mute: maybe\n", stderr="")
+        err_result = SimpleNamespace(returncode=1, stdout="", stderr="boom")
+
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=yes_result):
+            self.assertTrue(keystrel_client.get_sink_mute_state("1"))
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=no_result):
+            self.assertFalse(keystrel_client.get_sink_mute_state("1"))
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=weird_result):
+            with self.assertRaisesRegex(RuntimeError, "unexpected pactl output"):
+                keystrel_client.get_sink_mute_state("1")
+        with mock.patch.object(keystrel_client.subprocess, "run", return_value=err_result):
+            with self.assertRaisesRegex(RuntimeError, "boom"):
+                keystrel_client.get_sink_mute_state("1")
+
+
+class ClientVadAndSpeechRatioTests(unittest.TestCase):
+    def test_build_webrtc_vad_branches(self):
+        args = _args(webrtcvad=True, webrtcvad_mode=2, webrtcvad_frame_ms=20)
+
+        with mock.patch.object(keystrel_client, "webrtcvad", None):
+            self.assertIsNone(keystrel_client.build_webrtc_vad(args))
+
+        with mock.patch.object(keystrel_client, "webrtcvad", SimpleNamespace(Vad=lambda mode: ("vad", mode))):
+            bad_rate = _args(webrtcvad=True, sample_rate=11025, webrtcvad_mode=2, webrtcvad_frame_ms=20)
+            self.assertIsNone(keystrel_client.build_webrtc_vad(bad_rate))
+
+            bad_frame = _args(webrtcvad=True, sample_rate=16000, webrtcvad_mode=2, webrtcvad_frame_ms=15)
+            self.assertIsNone(keystrel_client.build_webrtc_vad(bad_frame))
+
+            ok = _args(webrtcvad=True, sample_rate=16000, webrtcvad_mode=3, webrtcvad_frame_ms=20)
+            self.assertEqual(keystrel_client.build_webrtc_vad(ok), ("vad", 3))
+
+        class _RaisingVadModule:
+            @staticmethod
+            def Vad(_mode):
+                raise RuntimeError("init fail")
+
+        with mock.patch.object(keystrel_client, "webrtcvad", _RaisingVadModule):
+            self.assertIsNone(keystrel_client.build_webrtc_vad(args))
+
+        disabled = _args(webrtcvad=False, sample_rate=16000, webrtcvad_mode=2, webrtcvad_frame_ms=20)
+        self.assertIsNone(keystrel_client.build_webrtc_vad(disabled))
+
+    def test_speech_ratio_in_chunk_paths(self):
+        args = _args(sample_rate=16000, webrtcvad_frame_ms=20)
+
+        self.assertIsNone(keystrel_client.speech_ratio_in_chunk(np.zeros((320, 1), dtype=np.float32), args, None))
+
+        short_ratio = keystrel_client.speech_ratio_in_chunk(np.zeros((10, 1), dtype=np.float32), args, object())
+        self.assertEqual(short_ratio, 0.0)
+
+        class _FakeVad:
+            def __init__(self):
+                self._values = [True, False]
+
+            def is_speech(self, *_args):
+                return self._values.pop(0)
+
+        chunk = np.ones((640, 2), dtype=np.float32) * 0.1
+        ratio = keystrel_client.speech_ratio_in_chunk(chunk, args, _FakeVad())
+        self.assertEqual(ratio, 0.5)
+
+        class _RaisingVad:
+            def is_speech(self, *_args):
+                raise RuntimeError("vad error")
+
+        self.assertIsNone(keystrel_client.speech_ratio_in_chunk(chunk, args, _RaisingVad()))
+
+
+class ClientChimeBackendTests(unittest.TestCase):
+    def test_play_chime_paplay_success_and_failure_paths(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            chime_file = Path(tmp_dir) / "bell.oga"
+            chime_file.write_bytes(b"dummy")
+            args = _args(chime_file=str(chime_file), chime_sink="sink0", verbose=True)
+
+            ok_result = SimpleNamespace(returncode=0, stderr="")
+            with (
+                mock.patch.object(keystrel_client.shutil, "which", return_value="/usr/bin/paplay"),
+                mock.patch.object(keystrel_client.subprocess, "run", return_value=ok_result) as run_cmd,
+            ):
+                self.assertTrue(keystrel_client._play_chime_paplay(args))
+
+            cmd = run_cmd.call_args.args[0]
+            self.assertEqual(cmd[0], "paplay")
+            self.assertIn("--device", cmd)
+            self.assertIn("sink0", cmd)
+
+            fail_result = SimpleNamespace(returncode=1, stderr="no output")
+            with (
+                mock.patch.object(keystrel_client.shutil, "which", return_value="/usr/bin/paplay"),
+                mock.patch.object(keystrel_client.subprocess, "run", return_value=fail_result),
+            ):
+                self.assertFalse(keystrel_client._play_chime_paplay(args))
+
+            with (
+                mock.patch.object(keystrel_client.shutil, "which", return_value="/usr/bin/paplay"),
+                mock.patch.object(keystrel_client.subprocess, "run", side_effect=RuntimeError("oops")),
+            ):
+                self.assertFalse(keystrel_client._play_chime_paplay(args))
+
+    def test_play_chime_pipewire_canberra_and_sounddevice_paths(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            chime_file = Path(tmp_dir) / "bell.oga"
+            chime_file.write_bytes(b"dummy")
+
+            pipe_args = _args(
+                chime_file=str(chime_file),
+                chime_target="target0",
+                chime_role="Music",
+                chime_volume=0.4,
+                verbose=True,
+            )
+            ok_result = SimpleNamespace(returncode=0, stderr="")
+            with (
+                mock.patch.object(keystrel_client.shutil, "which", return_value="/usr/bin/pw-play"),
+                mock.patch.object(keystrel_client.subprocess, "run", return_value=ok_result) as run_cmd,
+            ):
+                self.assertTrue(keystrel_client._play_chime_pipewire(pipe_args))
+            self.assertIn("--target", run_cmd.call_args.args[0])
+
+            can_args = _args(chime_file=str(Path(tmp_dir) / "missing.oga"), chime_event_id="bell")
+            with (
+                mock.patch.object(keystrel_client.shutil, "which", return_value="/usr/bin/canberra-gtk-play"),
+                mock.patch.object(
+                    keystrel_client.subprocess,
+                    "run",
+                    return_value=SimpleNamespace(returncode=0, stderr=""),
+                ) as run_canberra,
+            ):
+                self.assertTrue(keystrel_client._play_chime_canberra(can_args))
+            self.assertIn("-i", run_canberra.call_args.args[0])
+
+            sd_args = _args(chime_duration_ms=50, chime_freq_hz=2200.0, chime_volume=0.25, verbose=True)
+            with (
+                mock.patch.object(keystrel_client.sd, "play", return_value=None, create=True) as play,
+                mock.patch.object(keystrel_client.sd, "stop", return_value=None, create=True) as stop,
+            ):
+                self.assertTrue(keystrel_client._play_chime_sounddevice(sd_args))
+            play.assert_called_once()
+            stop.assert_called_once()
+
+            with (
+                mock.patch.object(keystrel_client.sd, "play", side_effect=RuntimeError("boom"), create=True),
+                mock.patch.object(keystrel_client.sd, "stop", return_value=None, create=True) as stop,
+            ):
+                self.assertFalse(keystrel_client._play_chime_sounddevice(sd_args))
+            stop.assert_called_once()
+
+    def test_play_start_chime_paplay_backend_and_verbose_failure_message(self):
+        args = _args(chime_backend="paplay", verbose=True)
+        with (
+            mock.patch.object(keystrel_client, "_play_chime_paplay", return_value=False) as paplay,
+            mock.patch.object(keystrel_client, "_play_chime_pipewire", return_value=False) as pipewire,
+            mock.patch.object(keystrel_client, "_play_chime_sounddevice", return_value=False) as sounddevice,
+            mock.patch.object(keystrel_client, "_play_chime_canberra", return_value=False) as canberra,
+            mock.patch("sys.stderr", new_callable=mock.MagicMock) as _stderr,
+        ):
+            keystrel_client.play_start_chime(args)
+
+        paplay.assert_called_once()
+        pipewire.assert_called_once()
+        sounddevice.assert_called_once()
+        canberra.assert_called_once()
+
+
 class ClientMuteControlTests(unittest.TestCase):
     def test_mute_output_disabled_returns_empty(self):
         args = _args(mute_output=False)
@@ -341,6 +540,27 @@ class ClientRecordUntilSilenceTests(unittest.TestCase):
             ):
                 with self.assertRaises(keystrel_client.CaptureCancelled):
                     keystrel_client.record_until_silence(args)
+
+    def test_record_until_silence_uses_short_poll_timeout(self):
+        args = _record_args(max_seconds=0.11, block_seconds=0.2, threshold=1.0, pre_roll_seconds=0.0)
+        monotonic_values = iter([0.0, 0.03, 0.07, 0.12])
+        captured_timeouts = []
+
+        with (
+            mock.patch.object(keystrel_client, "build_webrtc_vad", return_value=None),
+            mock.patch.object(
+                keystrel_client.queue,
+                "Queue",
+                side_effect=lambda: _TimeoutCapturingEmptyQueue(captured_timeouts),
+            ),
+            mock.patch.object(keystrel_client.sd, "InputStream", _NoopInputStream, create=True),
+            mock.patch.object(keystrel_client.time, "monotonic", side_effect=lambda: next(monotonic_values)),
+        ):
+            audio = keystrel_client.record_until_silence(args)
+
+        self.assertEqual(audio.size, 0)
+        self.assertGreaterEqual(len(captured_timeouts), 1)
+        self.assertTrue(all(timeout <= 0.05 for timeout in captured_timeouts if timeout is not None))
 
 
 class ClientChimeSelectionTests(unittest.TestCase):

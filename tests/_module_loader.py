@@ -14,6 +14,12 @@ def _load_module(module_name, file_path, stub_modules):
         saved_modules[name] = sys.modules.get(name)
         sys.modules[name] = module
 
+    lib_dir = str(LIB_DIR)
+    inserted_lib_dir = False
+    if lib_dir not in sys.path:
+        sys.path.insert(0, lib_dir)
+        inserted_lib_dir = True
+
     try:
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec is None or spec.loader is None:
@@ -22,6 +28,11 @@ def _load_module(module_name, file_path, stub_modules):
         spec.loader.exec_module(module)
         return module
     finally:
+        if inserted_lib_dir:
+            try:
+                sys.path.remove(lib_dir)
+            except ValueError:
+                pass
         for name, prior in saved_modules.items():
             if prior is None:
                 sys.modules.pop(name, None)

@@ -43,6 +43,17 @@ def _base_args(**overrides):
 
 
 class ClientMainFlowTests(unittest.TestCase):
+    def test_lock_unavailable_returns_without_side_effects(self):
+        args = _base_args()
+        with (
+            mock.patch.object(keystrel_client, "parse_args", return_value=args),
+            mock.patch.object(keystrel_client, "acquire_client_lock", return_value=None),
+            mock.patch.object(keystrel_client, "parse_server_endpoint") as parse_server,
+        ):
+            keystrel_client.main()
+
+        parse_server.assert_not_called()
+
     def test_list_devices_returns_before_lock(self):
         args = _base_args(list_devices=True)
         with (
@@ -72,6 +83,17 @@ class ClientMainFlowTests(unittest.TestCase):
         with (
             mock.patch.object(keystrel_client, "parse_args", return_value=args),
             mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+        ):
+            with self.assertRaises(SystemExit) as ctx:
+                keystrel_client.main()
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_invalid_remote_server_config_exits_with_code_2(self):
+        args = _base_args(server="bad")
+        with (
+            mock.patch.object(keystrel_client, "parse_args", return_value=args),
+            mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+            mock.patch.object(keystrel_client, "parse_server_endpoint", side_effect=ValueError("bad endpoint")),
         ):
             with self.assertRaises(SystemExit) as ctx:
                 keystrel_client.main()
@@ -137,6 +159,71 @@ class ClientMainFlowTests(unittest.TestCase):
                     keystrel_client.main()
 
         self.assertEqual(ctx.exception.code, 5)
+
+    def test_remote_success_prints_json_and_uses_tcp_transport(self):
+        args = _base_args(server="tcp://127.0.0.1:8765", server_token="secret", json=True, verbose=True)
+
+        def _fake_write(path, audio, sample_rate):  # noqa: ARG001
+            Path(path).write_bytes(b"fake-wav")
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(keystrel_client, "parse_args", return_value=args),
+            mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+            mock.patch.object(keystrel_client, "parse_server_endpoint", return_value=("127.0.0.1", 8765)),
+            mock.patch.object(keystrel_client, "play_start_chime"),
+            mock.patch.object(keystrel_client, "record_until_silence", return_value=_FakeAudio(1)),
+            mock.patch.object(keystrel_client.sf, "write", side_effect=_fake_write, create=True),
+            mock.patch.object(
+                keystrel_client,
+                "send_tcp_request",
+                return_value={"ok": True, "text": "remote text", "elapsed_s": 0.42, "language": "en"},
+            ) as send_tcp,
+            mock.patch.object(keystrel_client, "send_unix_request") as send_unix,
+            mock.patch("sys.stdout", new=stdout),
+            mock.patch("sys.stderr", new=stderr),
+        ):
+            keystrel_client.main()
+
+        send_unix.assert_not_called()
+        send_tcp.assert_called_once()
+        payload = send_tcp.call_args.args[2]
+        self.assertIn("audio_b64", payload)
+        self.assertEqual(payload["auth_token"], "secret")
+        self.assertIn('"text": "remote text"', stdout.getvalue())
+        self.assertIn("elapsed=0.42s", stderr.getvalue())
+
+    def test_local_success_prints_plain_text(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            socket_path = Path(tmp_dir) / "daemon.sock"
+            socket_path.write_text("present", encoding="utf-8")
+            args = _base_args(socket=str(socket_path), verbose=True)
+
+            def _fake_write(path, audio, sample_rate):  # noqa: ARG001
+                Path(path).write_bytes(b"fake-wav")
+
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+            with (
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime"),
+                mock.patch.object(keystrel_client, "record_until_silence", return_value=_FakeAudio(1)),
+                mock.patch.object(keystrel_client.sf, "write", side_effect=_fake_write, create=True),
+                mock.patch.object(
+                    keystrel_client,
+                    "send_unix_request",
+                    return_value={"ok": True, "text": "local text", "elapsed_s": 0.31, "language": "en"},
+                ) as send_unix,
+                mock.patch("sys.stdout", new=stdout),
+                mock.patch("sys.stderr", new=stderr),
+            ):
+                keystrel_client.main()
+
+        send_unix.assert_called_once()
+        self.assertEqual(stdout.getvalue(), "local text\n")
+        self.assertIn("elapsed=0.31s", stderr.getvalue())
 
     def test_empty_audio_returns_without_request(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -204,6 +291,31 @@ class ClientMainFlowTests(unittest.TestCase):
 
         mute_now.assert_called_once_with(args)
         confirm_mute.assert_not_called()
+
+    def test_cancel_after_chime_skips_capture_and_request(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            socket_path = Path(tmp_dir) / "daemon.sock"
+            socket_path.write_text("present", encoding="utf-8")
+            cancel_path = Path(tmp_dir) / "cancel.flag"
+            args = _base_args(socket=str(socket_path), cancel_file=str(cancel_path))
+
+            def _chime_side_effect(_args):
+                cancel_path.write_text("1", encoding="utf-8")
+
+            stdout = io.StringIO()
+            with (
+                mock.patch.object(keystrel_client, "parse_args", return_value=args),
+                mock.patch.object(keystrel_client, "acquire_client_lock", return_value=io.StringIO()),
+                mock.patch.object(keystrel_client, "play_start_chime", side_effect=_chime_side_effect),
+                mock.patch.object(keystrel_client, "record_until_silence") as record,
+                mock.patch.object(keystrel_client, "send_unix_request") as send_unix,
+                mock.patch("sys.stdout", new=stdout),
+            ):
+                keystrel_client.main()
+
+        self.assertEqual(stdout.getvalue(), "")
+        record.assert_not_called()
+        send_unix.assert_not_called()
 
     def test_capture_cancelled_returns_empty_without_request(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
