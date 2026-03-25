@@ -54,11 +54,7 @@ if [[ -z "$ptt_chime_target" ]] && command -v pactl >/dev/null 2>&1; then
 fi
 
 if [[ -z "$ptt_mute_start_delay_ms" ]]; then
-  if [[ "$ptt_chime_target" == bluez_output.* ]]; then
-    ptt_mute_start_delay_ms=1200
-  else
-    ptt_mute_start_delay_ms=0
-  fi
+  ptt_mute_start_delay_ms=0
 fi
 
 if ! command -v flock >/dev/null 2>&1; then
