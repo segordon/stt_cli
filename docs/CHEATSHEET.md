@@ -83,10 +83,11 @@ export KEYSTREL_SERVER="tcp://<tailscale-ip>:8765"
 export KEYSTREL_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
 ```
 
-Or copy template:
+Or copy and load template env:
 
 ```bash
 cp keystrel-client.env.example .env
+set -a; source .env; set +a
 ```
 
 Remote client test:
@@ -103,7 +104,7 @@ Current hotkey example:
 
 Works in any focused X11 text field, including browser inputs.
 PTT now plays a short start chime before muting/listening.
-Default `auto` backend prefers direct PipeWire playback (`pw-play`).
+Default backend is `pipewire`, which prefers direct PipeWire playback (`pw-play`).
 
 Binding points to:
 
@@ -295,18 +296,21 @@ Runtime scripts:
 - `$HOME/.local/bin/keystrel-daemon`
 - `$HOME/.local/bin/keystrel-client`
 - `$HOME/.local/bin/keystrel-ptt`
+- `$HOME/.local/bin/keystrel-unmute`
 - `$HOME/.local/lib/keystrel/keystrel_daemon.py`
 - `$HOME/.local/lib/keystrel/keystrel_client.py`
 
-Wrapper override env vars:
+Environment overrides (common):
 
 - `KEYSTREL_ENV_FILE`
 - `KEYSTREL_CLIENT_PY`
 - `KEYSTREL_DAEMON_PY`
 - `KEYSTREL_SOCKET_TIMEOUT`
+- `KEYSTREL_PACTL_TIMEOUT_S`
 - `KEYSTREL_SERVER`
 - `KEYSTREL_SERVER_TOKEN`
 - `KEYSTREL_SERVER_TIMEOUT`
+- `KEYSTREL_CANCEL_FILE`
 - `KEYSTREL_VENV_DIR`
 - `KEYSTREL_TCP_LISTEN`
 - `KEYSTREL_TCP_PORT`

@@ -53,7 +53,7 @@ For complete setup, service operations, and remote/Tailscale flow, use the docs 
 
 ## Repository Layout
 
-- `bin/` - wrapper scripts (`keystrel-client`, `keystrel-daemon`, `keystrel-ptt`)
+- `bin/` - wrapper scripts (`keystrel-client`, `keystrel-daemon`, `keystrel-ptt`, `keystrel-unmute`)
 - `lib/` - Python implementation (`keystrel_client.py`, `keystrel_daemon.py`)
 - `config/` - daemon env template
 - `docs/` - detailed project documentation

@@ -14,7 +14,7 @@ For tuning and environment variable reference, use `CONFIGURATION.md`.
 ## Runtime Assumptions
 
 - Desktop/session requirement: X11 (needed for `xdotool` typing injection).
-- Default model posture: English-focused `large-v3` with stronger decoding search.
+- Recommended baseline profile: English-focused `large-v3` with stronger decoding search.
 - Typical hotkey: `Ctrl+grave` invoking `$HOME/.local/bin/keystrel-ptt`.
 
 ## High-Level Architecture
@@ -61,7 +61,7 @@ flowchart LR
 ## Repository Layout
 
 - `lib/` Python implementation (`keystrel_client.py`, `keystrel_daemon.py`)
-- `bin/` wrapper scripts (`keystrel-client`, `keystrel-daemon`, `keystrel-ptt`)
+- `bin/` wrapper scripts (`keystrel-client`, `keystrel-daemon`, `keystrel-ptt`, `keystrel-unmute`)
 - `config/` daemon env template
 - `venv/` activation helper
 - `keystrel-client.env.example` client env template
@@ -142,10 +142,11 @@ export KEYSTREL_SERVER="tcp://<tailscale-ip>:8765"
 export KEYSTREL_SERVER_TOKEN="REPLACE_WITH_SAME_SECRET"
 ```
 
-Optional template:
+Optional env template (source before use):
 
 ```bash
 cp keystrel-client.env.example .env
+set -a; source .env; set +a
 ```
 
 ## Quickstart (Daily Use)
@@ -191,8 +192,8 @@ Common targets:
 
 `keystrel-client` chime backends:
 
-- `auto` (default): `pipewire` -> `paplay` -> `sounddevice` -> `canberra`
-- `pipewire`
+- `pipewire` (default): `pipewire` -> `paplay` -> `sounddevice` -> `canberra`
+- `auto`: `pipewire` -> `paplay` -> `sounddevice` -> `canberra`
 - `paplay`
 - `canberra`
 - `sounddevice`

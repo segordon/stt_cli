@@ -17,7 +17,7 @@ What unit tests currently cover:
 - Client request option payload construction.
 - Client CLI main-path behavior and exit codes for common failure modes.
 - Client Unix/TCP request error handling (timeouts, empty/invalid/oversize responses).
-- Client output mute/restore logic and chime backend fallback order.
+- Client output mute/restore logic, stale transaction recovery, and chime backend fallback order.
 - Client non-blocking lock behavior.
 - Unix-socket request validation and local `audio_path` handling.
 - TCP transport auth checks (missing token, bad token).
@@ -27,6 +27,7 @@ What unit tests currently cover:
 - Daemon socket path safety behavior for stale/missing/non-socket paths.
 - Daemon startup guards (`no transport`, `invalid port`, `missing token`) and dual-transport shutdown path.
 - `keystrel-ptt` script debounce and overlap lock behavior.
+- Wrapper script behavior for symlinked execution paths, including `keystrel-unmute` forwarding and failure handling.
 
 ## 2) Local Runtime Smoke Test (Unix Socket)
 
@@ -40,12 +41,14 @@ systemctl --user is-active keystrel-daemon
 Client smoke test:
 
 ```bash
+keystrel-client --recover-output-mute --verbose
 keystrel-client --verbose --max-seconds 1.5
 ```
 
 Expected:
 
 - service is `active`
+- recovery-only mode exits quickly and cleanly
 - client returns without crash/hang
 - transcript output is printed (or empty on silence)
 
@@ -104,6 +107,7 @@ These checks are covered by unit tests and should stay green before release.
 - Python syntax checks pass
 - local Unix-socket smoke test passes
 - remote Tailnet smoke test passes
+- mute recovery smoke test passes (`keystrel-client --recover-output-mute` and `keystrel-unmute`)
 - docs updated (`README.md`, `docs/README.md`, `docs/OPERATING_GUIDE.md`, `docs/CONFIGURATION.md`, `docs/TROUBLESHOOTING.md`, plus references like `docs/CHEATSHEET.md` and `docs/TESTING.md`)
 - no real secrets committed (`KEYSTREL_SERVER_TOKEN` must remain placeholder in repo files)
 
@@ -138,6 +142,18 @@ pactl list short sinks
 ```
 
 Confirm sink mute states are restored to original values.
+
+Recovery path after interrupted capture:
+
+```bash
+keystrel-client --verbose --max-seconds 10 &
+client_pid=$!
+sleep 1
+kill -TERM "$client_pid"
+keystrel-unmute
+```
+
+Confirm no sinks remain unexpectedly muted after recovery.
 
 Microphone/VAD quality pass:
 
