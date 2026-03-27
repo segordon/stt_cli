@@ -225,7 +225,18 @@ When enabled, client logic:
 1. Enumerates sinks with `pactl`.
 2. Snapshots each sink mute state.
 3. Mutes sinks that were unmuted.
-4. Restores all sink states in a `finally` block.
+4. Persists changed sinks to `~/.cache/keystrel/keystrel-mute-transaction.json`.
+5. Restores sink states in a `finally` block with timeout/retry safeguards.
+6. If restore is incomplete, keeps unresolved sink state for next-run recovery.
+
+Timeout note:
+
+- `pactl` mute-control timeout defaults to `1.0s` and can be tuned with `KEYSTREL_PACTL_TIMEOUT_S`.
+
+Startup behavior:
+
+- Before normal capture, `keystrel-client` attempts stale mute-state recovery.
+- `keystrel-unmute` runs recovery-only mode and exits.
 
 ## Concurrency and Repeat Protection
 

@@ -43,6 +43,7 @@ systemctl --user restart keystrel-daemon
 - `--threshold`
 - `--noise-multiplier`
 - `--socket-timeout`
+- `--recover-output-mute`
 - `--server`
 - `--server-token`
 - `--server-timeout`
@@ -95,11 +96,13 @@ Client/server transport and capture:
 - `KEYSTREL_SERVER_TOKEN`
 - `KEYSTREL_SERVER_TIMEOUT`
 - `KEYSTREL_SOCKET_TIMEOUT`
+- `KEYSTREL_PACTL_TIMEOUT_S`
 - `KEYSTREL_INPUT_DEVICE`
 - `KEYSTREL_SAMPLE_RATE`
 - `KEYSTREL_MUTE_START_DELAY_MS`
 - `KEYSTREL_MUTE_SETTLE_MS`
 - `KEYSTREL_MUTE_OUTPUT`
+- `KEYSTREL_MUTE_TRANSACTION_FILE`
 - `KEYSTREL_START_CHIME`
 - `KEYSTREL_CHIME_BACKEND`
 - `KEYSTREL_CHIME_FILE`

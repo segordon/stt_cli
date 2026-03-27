@@ -261,7 +261,13 @@ Expected secure permissions:
 - socket dir: `drwx------`
 - socket file: `srw-------`
 
-Emergency unmute all sinks:
+Recover stale mute transaction:
+
+```bash
+keystrel-unmute
+```
+
+Emergency unmute all sinks (manual fallback):
 
 ```bash
 for s in $(pactl list short sinks | awk '{print $1}'); do pactl set-sink-mute "$s" 0; done

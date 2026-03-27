@@ -114,6 +114,12 @@ keystrel-client --webrtcvad-mode 1 --speech-ratio 0.50 --start-speech-chunks 1
 
 ## Audio Output Remains Muted
 
+- Try automatic recovery first:
+
+```bash
+keystrel-unmute
+```
+
 - Inspect sink states:
 
 ```bash
